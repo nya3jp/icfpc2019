@@ -40,3 +40,32 @@ http_archive(
     strip_prefix = "googletest-release-1.8.1",
     urls = ["https://github.com/google/googletest/archive/release-1.8.1.zip"],
 )
+
+# Protocol Buffers (https://github.com/protocolbuffers/protobuf/)
+http_archive(
+    name = "com_google_protobuf",
+    sha256 = "f976a4cd3f1699b6d20c1e944ca1de6754777918320c719742e1674fcf247b7e",
+    strip_prefix = "protobuf-3.7.1",
+    urls = ["https://github.com/protocolbuffers/protobuf/archive/v3.7.1.zip"],
+)
+
+# zlib required for Protocol Buffers
+http_archive(
+    name = "net_zlib",
+    build_file = "@com_google_protobuf//:third_party/zlib.BUILD",
+    sha256 = "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1",
+    strip_prefix = "zlib-1.2.11",
+    urls = ["https://zlib.net/zlib-1.2.11.tar.gz"],
+)
+bind(
+    name = "zlib",
+    actual = "@net_zlib//:zlib",
+)
+
+# Bazel Skylib (https://github.com/bazelbuild/bazel-skylib)
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "2ef429f5d7ce7111263289644d233707dba35e39696377ebab8b0bc701f7818e",
+    type = "tar.gz",
+    urls = ["https://github.com/bazelbuild/bazel-skylib/releases/download/0.8.0/bazel-skylib.0.8.0.tar.gz"],
+)

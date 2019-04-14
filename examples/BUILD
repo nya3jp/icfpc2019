@@ -39,3 +39,23 @@ cc_test(
         "@com_github_google_googletest//:gtest_main",
     ],
 )
+
+cc_binary(
+    name = "protobuf",
+    srcs = [
+        "protobuf.cc",
+    ],
+    deps = [
+        ":data_cc_proto",
+    ],
+)
+
+proto_library(
+    name = "data_proto",
+    srcs = ["data.proto"],
+)
+
+cc_proto_library(
+    name = "data_cc_proto",
+    deps = [":data_proto"],
+)
