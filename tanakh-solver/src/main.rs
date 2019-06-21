@@ -1,11 +1,11 @@
 use regex::Regex;
-use structopt::StructOpt;
-use std::io::prelude::*;
-use std::path::{Path, PathBuf};
-use std::fs::{self, File};
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
+use std::fs::{self, File};
+use std::io::prelude::*;
+use std::path::{Path, PathBuf};
+use structopt::StructOpt;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 type Board = Vec<Vec<u8>>;
@@ -13,9 +13,7 @@ type Board = Vec<Vec<u8>>;
 #[derive(Debug, StructOpt)]
 enum Opt {
     #[structopt(name = "solve")]
-    Solve {
-        input: PathBuf,
-    },
+    Solve { input: PathBuf },
 
     #[structopt(name = "pack")]
     Pack,
@@ -23,12 +21,7 @@ enum Opt {
 
 type Pos = (i64, i64);
 
-const VECT: &[Pos] = &[
-    (1, 0),
-    (-1, 0),
-    (0, 1),
-    (0, -1),
-];
+const VECT: &[Pos] = &[(1, 0), (-1, 0), (0, 1), (0, -1)];
 
 #[derive(Debug, Clone)]
 enum Booster {
@@ -58,19 +51,28 @@ struct Input {
 
 fn parse_pos(s: &str) -> Result<Pos> {
     // dbg!(s);
-    let s = s.chars().map(|c| if c.is_ascii_digit() {c} else {' '}).collect::<String>();
+    let s = s
+        .chars()
+        .map(|c| if c.is_ascii_digit() { c } else { ' ' })
+        .collect::<String>();
     let mut it = s.split_whitespace().map(|w| w.parse().unwrap());
     Ok((it.next().unwrap(), it.next().unwrap()))
 }
 
 fn parse_pos_list(s: &str) -> Result<Vec<Pos>> {
     // dbg!(s);
-    s.split("),(").filter(|w| w.trim() != "").map(parse_pos).collect()
+    s.split("),(")
+        .filter(|w| w.trim() != "")
+        .map(parse_pos)
+        .collect()
 }
 
 fn parse_pos_list_list(s: &str) -> Result<Vec<Vec<Pos>>> {
     // dbg!(s);
-    s.split(';').filter(|w| w.trim() != "").map(parse_pos_list).collect()
+    s.split(';')
+        .filter(|w| w.trim() != "")
+        .map(parse_pos_list)
+        .collect()
 }
 
 fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
@@ -88,7 +90,10 @@ fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
 }
 
 fn parse_booster_list(s: &str) -> Result<Vec<(Booster, Pos)>> {
-    s.split(';').filter(|w| w.trim() != "").map(parse_booster).collect()
+    s.split(';')
+        .filter(|w| w.trim() != "")
+        .map(parse_booster)
+        .collect()
 }
 
 fn read_input(path: &Path) -> Result<Input> {
@@ -140,14 +145,21 @@ fn normalize(input: &mut Input) -> (i64, i64) {
 fn print_bd(bd: &Vec<Vec<u8>>) {
     for y in (0..bd.len()).rev() {
         for x in 0..bd[y].len() {
-            let c =
-                if bd[y][x] & (1<<4) != 0 {'B'} else
-                if bd[y][x] & (1<<5) != 0 {'F'} else
-                if bd[y][x] & (1<<6) != 0 {'L'} else
-                if bd[y][x] & (1<<7) != 0 {'X'} else
-                if bd[y][x] & (1<<1) != 0 {'.'} else
-                if bd[y][x] & 1 == 0 {' '} else
-                {'#'};
+            let c = if bd[y][x] & (1 << 4) != 0 {
+                'B'
+            } else if bd[y][x] & (1 << 5) != 0 {
+                'F'
+            } else if bd[y][x] & (1 << 6) != 0 {
+                'L'
+            } else if bd[y][x] & (1 << 7) != 0 {
+                'X'
+            } else if bd[y][x] & (1 << 1) != 0 {
+                '.'
+            } else if bd[y][x] & 1 == 0 {
+                ' '
+            } else {
+                '#'
+            };
             eprint!("{}", c);
         }
         eprintln!();
@@ -182,7 +194,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
         let mut ss = BTreeSet::new();
         for i in 0..input.map.len() {
             let (x1, y1) = input.map[i];
-            let (x2, y2) = input.map[(i+1)%input.map.len()];
+            let (x2, y2) = input.map[(i + 1) % input.map.len()];
 
             if x1 != x2 {
                 continue;
@@ -201,7 +213,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
         // dbg!((y, &ss));
 
         for i in 0..ss.len() / 2 {
-            for j in ss[i*2]..ss[i*2+1] {
+            for j in ss[i * 2]..ss[i * 2 + 1] {
                 bd[y as usize][j as usize] = 0;
             }
         }
@@ -212,7 +224,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
         for j in 0..input.obstacles.len() {
             for i in 0..input.obstacles[j].len() {
                 let (x1, y1) = input.obstacles[j][i];
-                let (x2, y2) = input.obstacles[j][(i+1)%input.obstacles[j].len()];
+                let (x2, y2) = input.obstacles[j][(i + 1) % input.obstacles[j].len()];
 
                 if x1 != x2 {
                     continue;
@@ -232,7 +244,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
         // dbg!((y, &ss));
 
         for i in 0..ss.len() / 2 {
-            for j in ss[i*2]..ss[i*2+1] {
+            for j in ss[i * 2]..ss[i * 2 + 1] {
                 bd[y as usize][j as usize] = 1;
             }
         }
@@ -313,7 +325,7 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
     }
 }
 
-fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command>{
+fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
@@ -339,7 +351,7 @@ fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command>{
 
     while let Some((nx, ny)) = nearest(&bd, cx, cy) {
         // dbg!((nx, ny));
-        ret.push(Command::Move(nx-cx, ny-cy));
+        ret.push(Command::Move(nx - cx, ny - cy));
         cx = nx;
         cy = ny;
 
@@ -376,10 +388,7 @@ fn solve_lightning(name: &str, input: &Input) -> Result<()> {
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!(
-        "Score for {}: score = {}",
-        name, score
-    );
+    println!("Score for {}: score = {}", name, score);
 
     save_solution(LIGHTNING_DIR, name, &ans, score)
 }
@@ -450,7 +459,7 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
 fn main() -> Result<()> {
     match Opt::from_args() {
-        Opt::Solve{ input } => {
+        Opt::Solve { input } => {
             let problem = read_input(&input)?;
             solve_lightning(&get_problem_name(&input), &problem)?;
         }
