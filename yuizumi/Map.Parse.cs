@@ -30,7 +30,7 @@ namespace Yuizumi.Icfpc2019
                 }
             }
 
-            Point wrappy = ParsePoint(chunks[1]);
+            Point wrappy = Point.Parse(chunks[1]);
             map.FillFree(wrappy.X, wrappy.Y);
 
             map.FillWall();
@@ -39,17 +39,11 @@ namespace Yuizumi.Icfpc2019
             {
                 foreach (string subdesc in chunks[3].Split(';'))
                 {
-                    map[ParsePoint(subdesc.Substring(1))] = subdesc[0];
+                    map[Point.Parse(subdesc.Substring(1))] = subdesc[0];
                 }
             }
 
             return map;
-        }
-
-        private static Point ParsePoint(string desc)
-        {
-            string[] xy = desc.Substring(1, desc.Length - 2).Split(',');
-            return new Point(Int32.Parse(xy[0]), Int32.Parse(xy[1]));
         }
 
         private static IReadOnlyList<Point> ParsePolygon(string desc)
