@@ -9,6 +9,8 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
+const ISLAND_SIZE_THRESHOLD: usize = 50;
+
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
 // Board format
@@ -169,6 +171,8 @@ fn print_bd(bd: &Vec<Vec<u8>>) {
                 'X'
             } else if bd[y][x] >> 4 == 5 {
                 'X'
+            } else if bd[y][x] & 4 != 0 {
+                '+'
             } else if bd[y][x] & 2 != 0 {
                 '.'
             } else if bd[y][x] & 1 != 0 {
@@ -281,7 +285,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
+fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i64)> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
@@ -311,7 +315,13 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
             prev.insert((nx, ny), (cx, cy));
             q.push_back((nx, ny));
 
-            if bd[ny as usize][nx as usize] & 2 == 0 {
+            if bd[ny as usize][nx as usize] & 2 == 0
+                && if has_prios {
+                    bd[ny as usize][nx as usize] & 4 != 0
+                } else {
+                    true
+                }
+            {
                 found = Some((nx, ny));
                 // dbg!((&found, bd[ny as usize][nx as usize]));
                 break;
@@ -348,6 +358,7 @@ struct State {
     y: i64,
     items: Vec<usize>,
     manips: Vec<Pos>,
+    prios: usize,
 }
 
 impl State {
@@ -358,12 +369,15 @@ impl State {
             y,
             items: vec![0; 5 + 1],
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+            prios: 0,
         }
     }
 
     fn move_to(&mut self, x: i64, y: i64) {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
+
+        let mut mark_around = BTreeSet::new();
 
         for &(dx, dy) in self.manips.iter() {
             let tx = x + dx;
@@ -384,6 +398,15 @@ impl State {
             }
 
             self.bd[ty as usize][tx as usize] |= 2;
+
+            if self.bd[ty as usize][tx as usize] & 4 != 0 {
+                self.bd[ty as usize][tx as usize] &= !4;
+                self.prios -= 1;
+            }
+
+            for &(dx, dy) in VECT.iter() {
+                mark_around.insert((dx + tx, dy + ty));
+            }
         }
         if self.bd[y as usize][x as usize] >> 4 != 0 {
             self.items[(self.bd[y as usize][x as usize] >> 4) as usize] += 1;
@@ -392,6 +415,67 @@ impl State {
 
         self.x = x;
         self.y = y;
+
+        // mark islands
+        for (mx, my) in mark_around {
+            if !(mx >= 0 && mx < w && my >= 0 && my < h) {
+                continue;
+            }
+            if self.bd[my as usize][mx as usize] & 4 != 0 {
+                continue;
+            }
+
+            // print_bd(&self.bd);
+            let island_size = self.paint(mx, my, true, 0);
+            // eprintln!("Island size: {}, prios: {}", island_size, self.prios);
+            // print_bd(&self.bd);
+            if island_size >= ISLAND_SIZE_THRESHOLD {
+                self.paint(mx, my, false, 0);
+            }
+            // print_bd(&self.bd);
+            // eprintln!("Island size: {}, prios: {}", island_size, self.prios);
+        }
+    }
+
+    fn paint(&mut self, x: i64, y: i64, b: bool, mut acc: usize) -> usize {
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        if b && acc >= ISLAND_SIZE_THRESHOLD {
+            return acc;
+        }
+
+        let flg = if b { 0 } else { 4 };
+
+        if !(x >= 0 && x < w && y >= 0 && y < h) {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 1 != 0 {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 2 != 0 {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 4 != flg {
+            return acc;
+        }
+
+        self.bd[y as usize][x as usize] ^= 4;
+        if b {
+            self.prios += 1;
+        } else {
+            self.prios -= 1;
+        }
+
+        acc += 1;
+        acc = self.paint(x + 1, y, b, acc);
+        acc = self.paint(x - 1, y, b, acc);
+        acc = self.paint(x, y + 1, b, acc);
+        acc = self.paint(x, y - 1, b, acc);
+        acc
     }
 }
 
@@ -402,18 +486,24 @@ fn pass_cells(x1: i64, y1: i64, x2: i64, y2: i64) -> Vec<(i64, i64)> {
         pass_cells(x2, y2, x1, y1)
     } else {
         let mut ret = vec![];
-        let mut grad = Rational::new((y2-y1) as _, (x2-x1) as _);
+        let grad = Rational::new((y2 - y1) as _, (x2 - x1) as _);
         let half = Rational::new(1, 2);
         for x in x1..=x2 {
-            let l = max(Rational::from_integer(x1 as _),
-                Rational::from_integer(x as _) - half);
-            let r = min(Rational::from_integer(x2 as _),
-                Rational::from_integer(x as _) + half);
+            let l = max(
+                Rational::from_integer(x1 as _),
+                Rational::from_integer(x as _) - half,
+            );
+            let r = min(
+                Rational::from_integer(x2 as _),
+                Rational::from_integer(x as _) + half,
+            );
 
-            let ly: Rational =
-                Rational::from_integer(y1 as _) + (l - Rational::from_integer(x1 as _)) * grad + half;
-            let ry: Rational =
-                Rational::from_integer(y1 as _) + (r - Rational::from_integer(x1 as _)) * grad + half;
+            let ly: Rational = Rational::from_integer(y1 as _)
+                + (l - Rational::from_integer(x1 as _)) * grad
+                + half;
+            let ry: Rational = Rational::from_integer(y1 as _)
+                + (r - Rational::from_integer(x1 as _)) * grad
+                + half;
 
             let lo = min(*ly.floor().numer(), *ry.floor().numer());
             let hi = max(*ly.ceil().numer(), *ry.ceil().numer());
@@ -433,8 +523,14 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, -1, 1), vec![(-1, 1), (0, 0)]);
     assert_eq!(pass_cells(0, 0, 1, 1), vec![(0, 0), (1, 1)]);
 
-    assert_eq!(pass_cells(0, 0, -2, 1), vec![(-2, 1), (-1, 0), (-1, 1), (0, 0)]);
-    assert_eq!(pass_cells(0, 0, -3, 1), vec![(-3, 1), (-2, 1), (-1, 0), (0, 0)]);
+    assert_eq!(
+        pass_cells(0, 0, -2, 1),
+        vec![(-2, 1), (-1, 0), (-1, 1), (0, 0)]
+    );
+    assert_eq!(
+        pass_cells(0, 0, -3, 1),
+        vec![(-3, 1), (-2, 1), (-1, 0), (0, 0)]
+    );
 
     assert_eq!(pass_cells(0, 0, 1, 2), vec![(0, 0), (0, 1), (1, 1), (1, 2)]);
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
@@ -448,17 +544,18 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
     let mut ret = vec![];
 
     loop {
-        let n = nearest(&state.bd, state.x, state.y);
+        let n = nearest(&state.bd, state.x, state.y, state.prios > 0);
         if n.is_none() {
             break;
         }
         let (nx, ny) = n.unwrap();
 
+        // 手が増やせるならとりあえず縦に増やす
         while state.items[1] > 0 {
             state.items[1] -= 1;
 
             for i in 0.. {
-                let dy = if i % 2 == 0 {-2 - i/2} else {2 + i/2};
+                let dy = if i % 2 == 0 { -2 - i / 2 } else { 2 + i / 2 };
                 if !state.manips.contains(&(1, dy)) {
                     ret.push(Command::AttachManip(1, dy));
                     state.manips.push((1, dy));
@@ -469,6 +566,7 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
 
         ret.push(Command::Move(nx - state.x, ny - state.y));
         state.move_to(nx, ny);
+
         // print_bd(&state.bd);
     }
 
@@ -489,7 +587,12 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!("Score for {}: score = {}, best_score = {}", name, score, bs.unwrap_or(-1));
+    println!(
+        "Score for {}: score = {}, best_score = {}",
+        name,
+        score,
+        bs.unwrap_or(-1)
+    );
 
     if show_solution {
         println!("{}", encode_commands(&ans));
@@ -563,7 +666,10 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
 fn main() -> Result<()> {
     match Opt::from_args() {
-        Opt::Solve { input, show_solution } => {
+        Opt::Solve {
+            input,
+            show_solution,
+        } => {
             let problem = read_input(&input)?;
             solve_lightning(&get_problem_name(&input), &problem, show_solution)?;
         }
