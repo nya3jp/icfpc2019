@@ -9,8 +9,8 @@ namespace Yuizumi.Icfpc2019
             mWrappy = wrappy;
             mMap = map;
 
-            for (int y = mMap.MinY; y <= mMap.MaxY; y++)
-            for (int x = mMap.MinX; x <= mMap.MaxX; x++)
+            for (int y = 0; y <= mMap.YSize; y++)
+            for (int x = 0; x <= mMap.XSize; x++)
                 if (mMap[x, y] != Map.Wall) ++mCount;
         }
 

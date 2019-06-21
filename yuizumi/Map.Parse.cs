@@ -4,6 +4,8 @@ using System.Linq;
 
 namespace Yuizumi.Icfpc2019
 {
+    using static StringSplitOptions;
+
     public partial class Map
     {
         public static Map Parse(string desc)
@@ -11,54 +13,53 @@ namespace Yuizumi.Icfpc2019
             string[] chunks = desc.Split('#');
 
             IReadOnlyList<Point> outer = ParsePolygon(chunks[0]);
-
-            int cx = 0, cy = 0;
+            int xmax = 0, ymax = 0;
             foreach (Point p in outer)
             {
-                cx = Math.Max(cx, p.X);
-                cy = Math.Max(cy, p.Y);
+                xmax = Math.Max(xmax, p.X);
+                ymax = Math.Max(ymax, p.Y);
             }
-            var map = new Map(cx, cy);
+            var map = new Map(new char[xmax, ymax]);
 
-            map.DrawWall(outer, 1, 0);
+            map.DrawOuterWall(outer);
 
-            if (chunks[2] != "")
+            foreach (string subdesc in Split(chunks[2], ';'))
+                map.DrawInnerWall(ParsePolygon(subdesc));
+
+            Point start = Point.Parse(chunks[1]);
+            map.FillFree(start.X, start.Y);
+
+            for (int y = 0; y < ymax; y++)
+            for (int x = 0; x < xmax; x++)
             {
-                foreach (string subdesc in chunks[2].Split(';'))
-                {
-                    map.DrawWall(ParsePolygon(subdesc), 0, 1);
-                }
+                if (map.mCells[x, y] == '\0') map.mCells[x, y] = Wall;
             }
 
-            Point wrappy = Point.Parse(chunks[1]);
-            map.FillFree(wrappy.X, wrappy.Y);
-
-            map.FillWall();
-
-            if (chunks[3] != "")
+            foreach (string subdesc in Split(chunks[3], ';'))
             {
-                foreach (string subdesc in chunks[3].Split(';'))
-                {
-                    map[Point.Parse(subdesc.Substring(1))] = subdesc[0];
-                }
+                char booster = subdesc[0];
+                map[Point.Parse(subdesc.Substring(1))] = booster;
             }
 
             return map;
         }
 
+        private static string[] Split(string value, params char[] split)
+            => value.Split(split, RemoveEmptyEntries);
+
         private static IReadOnlyList<Point> ParsePolygon(string desc)
         {
-            string[] coords = desc.Substring(1, desc.Length - 2).Split("),(");
-
-            var polygon = new List<Point>(coords.Length);
-            for (int i = 0; i < coords.Length; i++)
-            {
-                string[] xy = coords[i].Split(',');
-                polygon.Add(new Point(Int32.Parse(xy[0]), Int32.Parse(xy[1])));
-            }
-
-            return polygon;
+            return desc.Substring(1, desc.Length - 2).Split("),(")
+                .Select(s => s.Split(','))
+                .Select(xy => new Point(Int32.Parse(xy[0]), Int32.Parse(xy[1])))
+                .ToList().AsReadOnly();
         }
+
+        private void DrawOuterWall(IReadOnlyList<Point> polygon)
+            => DrawWall(polygon, 1, 0);
+
+        private void DrawInnerWall(IReadOnlyList<Point> polygon)
+            => DrawWall(polygon, 0, 1);
 
         private void DrawWall(IReadOnlyList<Point> polygon, int outer, int inner)
         {
@@ -97,17 +98,6 @@ namespace Yuizumi.Icfpc2019
             if (this[x + 1, y] == '\0') FillFree(x + 1, y);
             if (this[x, y - 1] == '\0') FillFree(x, y - 1);
             if (this[x, y + 1] == '\0') FillFree(x, y + 1);
-        }
-
-        private void FillWall()
-        {
-            for (int y = MinY; y <= MaxY; y++)
-            {
-                for (int x = MinX; x <= MaxX; x++)
-                {
-                    if (this[x, y] == '\0') this[x, y] = Wall;
-                }
-            }
         }
     }
 }

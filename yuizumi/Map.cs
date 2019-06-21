@@ -4,14 +4,9 @@ namespace Yuizumi.Icfpc2019
 {
     public partial class Map
     {
-        private Map(int cx, int cy)
-        {
-            mCells = new char[cx, cy];
-        }
-
         private Map(char[,] cells)
         {
-            mCells = (char[,]) cells.Clone();
+            mCells = cells;
         }
 
         private readonly char[,] mCells;
@@ -19,20 +14,18 @@ namespace Yuizumi.Icfpc2019
         public const char Free = '.';
         public const char Wall = '#';
 
-        public int MinX => mCells.GetLowerBound(0);
-        public int MaxX => mCells.GetUpperBound(0);
-        public int MinY => mCells.GetLowerBound(1);
-        public int MaxY => mCells.GetUpperBound(1);
+        public int XSize => mCells.GetLength(0);
+        public int YSize => mCells.GetLength(1);
 
         public char this[int x, int y]
         {
             get
             {
-                return InsideBounding(x, y) ? mCells[x, y] : Wall;
+                return InsideBoundingBox(x, y) ? mCells[x, y] : Wall;
             }
             set
             {
-                if (InsideBounding(x, y)) mCells[x, y] = value;
+                if (InsideBoundingBox(x, y)) mCells[x, y] = value;
             }
         }
 
@@ -42,22 +35,22 @@ namespace Yuizumi.Icfpc2019
             set { this[p.X, p.Y] = value; }
         }
 
-        public Map Clone() => (new Map(mCells));
+        public Map Clone() => new Map(mCells.Clone() as char[,]);
 
         public override string ToString()
         {
             var sb = new StringBuilder();
-            for (int y = MaxY; y >= MinY; y--)
+            for (int y = YSize - 1; y >= 0; y--)
             {
-                for (int x = MinX; x <= MaxX; x++) sb.Append(mCells[x, y]);
-                if (y != MinY) sb.AppendLine();
+                for (int x = 0; x < XSize; x++) sb.Append(mCells[x, y]);
+                if (y != 0) sb.AppendLine();
             }
             return sb.ToString();
         }
 
-        private bool InsideBounding(int x, int y)
+        private bool InsideBoundingBox(int x, int y)
         {
-            return (MinX <= x && x <= MaxX) && (MinY <= y && y <= MaxY);
+            return (0 <= x && x < XSize) && (0 <= y && y < YSize);
         }
     }
 }
