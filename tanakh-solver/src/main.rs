@@ -1,3 +1,4 @@
+use chrono::prelude::*;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -485,15 +486,18 @@ fn main() -> Result<()> {
                 };
 
                 if let Some(best) = get_best_score(dir, &name)? {
-                    let fname = format!("{}.sol", name);
+                    let fname = format!("prob-{}.sol", name);
                     fs::copy(path.join(format!("{}.sol", best)), tmp.join(&fname))?;
                     files.push(fname);
                 }
             }
 
+            let dt = Local::now();
+            let now = dt.format("%m%d%H%M");
+
             env::set_current_dir(tmp)?;
             std::process::Command::new("zip")
-                .arg("../submission.zip")
+                .arg(format!("../submission-{}.zip", now))
                 .args(&files)
                 .status()?;
         }
