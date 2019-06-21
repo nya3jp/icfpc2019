@@ -107,6 +107,14 @@ struct Mine {
   void setPos(int x, int y) {
     cur_x = x;
     cur_y = y;
+    // arms = {{0, 0}, {1, -1}, {1, 0}, {1, 1}};
+    // for (size_t i = 0; i < arms.size(); ++i) {
+    //   int x = cur_x + std::get<0>(arms[i]);
+    //   int y = cur_y + std::get<1>(arms[i]);
+    //   if (x < 0 || x >= max_x) continue;
+    //   if (y < 0 || y >= max_y) continue;
+    //   mp[y][x] = 2;
+    // }
   }
 
   void dump() {
@@ -124,6 +132,52 @@ struct Mine {
     }
   }
 
+  void dfs_rec(std::vector<std::vector<int>> &np,
+               std::vector<std::vector<int>> &tree,
+               int x, int y) {
+    int idx = y * max_x + x;
+    np[y][x] = 10;
+    int dx[4] = {0, 0, 1, -1};
+    int dy[4] = {1, -1, 0, 0};
+    for (int i = 0; i < 4; ++i) {
+      int nx = x + dx[i], ny = y + dy[i];
+      if (nx < 0 || nx >= max_x || ny < 0 || ny >= max_y
+          || np[ny][nx] != 0) continue;
+      tree[idx].push_back(ny * max_x + nx);
+      dfs_rec(np, tree, nx, ny);
+    }
+  }
+
+  void dfs_dump(const std::vector<std::vector<int>> &tree,
+                int x, int y) {
+    int idx = y * max_x + x;
+    if (tree[idx].empty()) return;
+    int dx[4] = {0, 0, 1, -1};
+    int dy[4] = {1, -1, 0, 0};
+    char dir[4] = {'W', 'S', 'D', 'A'};
+    char rev[4] = {'S', 'W', 'A', 'D'};
+
+    for (size_t child = 0; child < tree[idx].size(); ++child) {
+      int c = tree[idx][child];
+      int nx = c % max_x, ny = c / max_x;
+      for (int i = 0; i < 4; ++i) {
+        if (x + dx[i] == nx && y + dy[i] == ny) {
+          std::cout << dir[i];
+          dfs_dump(tree, nx, ny);
+          std::cout << rev[i];
+        }
+      }
+    }
+  }
+
+  void dfs() {
+    std::vector<std::vector<int>> np = mp;
+    std::vector<std::vector<int>> tree(max_x * max_y, std::vector<int>());
+    dfs_rec(np, tree, cur_x, cur_y);
+
+    dfs_dump(tree, cur_x, cur_y);
+  }
+
   // 0 = empty
   // 1 = obstacle
   // 2 = wrapped
@@ -132,6 +186,7 @@ struct Mine {
   int cur_y = -1;
   int max_x = 0;
   int max_y = 0;
+  std::vector<std::tuple<int, int>> arms;
 };
 
 int main(int argc, char** argv) {
@@ -145,10 +200,11 @@ int main(int argc, char** argv) {
 
   Mine mine;
   mine.parse(parts[0]);
+  mine.parseObstacles(parts[2]);
   std::tuple<int, int> initial_pos = parsePoint(parts[1]);
   mine.setPos(std::get<0>(initial_pos), std::get<1>(initial_pos));
-  mine.parseObstacles(parts[2]);
-  mine.dump();
+  // mine.dump();
+  mine.dfs();
 
   return 0;
 }
