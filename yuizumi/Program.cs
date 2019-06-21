@@ -14,7 +14,7 @@ namespace Yuizumi.Icfpc2019
             catch (Exception e)
             {
                 Console.Error.WriteLine(e);
-                Environment.Exit(0);
+                Environment.Exit(1);
             }
         }
     }

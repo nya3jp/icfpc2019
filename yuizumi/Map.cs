@@ -9,6 +9,11 @@ namespace Yuizumi.Icfpc2019
             mCells = new char[cx, cy];
         }
 
+        private Map(char[,] cells)
+        {
+            mCells = (char[,]) cells.Clone();
+        }
+
         private readonly char[,] mCells;
 
         public const char Free = '.';
@@ -25,7 +30,7 @@ namespace Yuizumi.Icfpc2019
             {
                 return InsideBounding(x, y) ? mCells[x, y] : Wall;
             }
-            private set
+            set
             {
                 if (InsideBounding(x, y)) mCells[x, y] = value;
             }
@@ -34,26 +39,25 @@ namespace Yuizumi.Icfpc2019
         public char this[Point p]
         {
             get => this[p.X, p.Y];
-            private set { this[p.X, p.Y] = value; }
+            set { this[p.X, p.Y] = value; }
+        }
+
+        public Map Clone() => (new Map(mCells));
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            for (int y = MaxY; y >= MinY; y--)
+            {
+                for (int x = MinX; x <= MaxX; x++) sb.Append(mCells[x, y]);
+                if (y != MinY) sb.AppendLine();
+            }
+            return sb.ToString();
         }
 
         private bool InsideBounding(int x, int y)
         {
             return (MinX <= x && x <= MaxX) && (MinY <= y && y <= MaxY);
-        }
-
-        public override string ToString()
-        {
-            var sb = new StringBuilder();
-
-            for (int y = MaxY; y >= MinY; y--)
-            {
-                for (int x = MinX; x <= MaxX; x++)
-                    sb.Append(mCells[x, y] == '\0' ? ' ' : mCells[x, y]);
-                if (y != MinY) sb.AppendLine();
-            }
-
-            return sb.ToString();
         }
     }
 }
