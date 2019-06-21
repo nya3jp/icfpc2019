@@ -1,4 +1,5 @@
 use chrono::prelude::*;
+use num_rational::Rational;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -9,12 +10,22 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
+
+// Board format
+// bit 0: Wall
+// bit 1: Painted
+// bit 4-7: Booster
 type Board = Vec<Vec<u8>>;
 
 #[derive(Debug, StructOpt)]
 enum Opt {
     #[structopt(name = "solve")]
-    Solve { input: PathBuf },
+    Solve {
+        #[structopt(short = "s")]
+        show_solution: bool,
+
+        input: PathBuf,
+    },
 
     #[structopt(name = "pack")]
     Pack,
@@ -24,12 +35,13 @@ type Pos = (i64, i64);
 
 const VECT: &[Pos] = &[(1, 0), (-1, 0), (0, 1), (0, -1)];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
     B,
     F,
     L,
     X,
+    R,
 }
 
 #[derive(Debug)]
@@ -82,6 +94,7 @@ fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
         "F" => Booster::F,
         "L" => Booster::L,
         "X" => Booster::X,
+        "R" => Booster::R,
         _ => unreachable!(),
     };
 
@@ -146,20 +159,22 @@ fn normalize(input: &mut Input) -> (i64, i64) {
 fn print_bd(bd: &Vec<Vec<u8>>) {
     for y in (0..bd.len()).rev() {
         for x in 0..bd[y].len() {
-            let c = if bd[y][x] & (1 << 4) != 0 {
+            let c = if bd[y][x] >> 4 == 1 {
                 'B'
-            } else if bd[y][x] & (1 << 5) != 0 {
+            } else if bd[y][x] >> 4 == 2 {
                 'F'
-            } else if bd[y][x] & (1 << 6) != 0 {
+            } else if bd[y][x] >> 4 == 3 {
                 'L'
-            } else if bd[y][x] & (1 << 7) != 0 {
+            } else if bd[y][x] >> 4 == 4 {
                 'X'
-            } else if bd[y][x] & (1 << 1) != 0 {
+            } else if bd[y][x] >> 4 == 5 {
+                'X'
+            } else if bd[y][x] & 2 != 0 {
                 '.'
-            } else if bd[y][x] & 1 == 0 {
-                ' '
-            } else {
+            } else if bd[y][x] & 1 != 0 {
                 '#'
+            } else {
+                ' '
             };
             eprint!("{}", c);
         }
@@ -254,9 +269,10 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
     for (typ, (x, y)) in input.boosters.iter() {
         match typ {
             Booster::B => bd[*y as usize][*x as usize] |= 1 << 4,
-            Booster::F => bd[*y as usize][*x as usize] |= 1 << 5,
-            Booster::L => bd[*y as usize][*x as usize] |= 1 << 6,
-            Booster::X => bd[*y as usize][*x as usize] |= 1 << 7,
+            Booster::F => bd[*y as usize][*x as usize] |= 2 << 4,
+            Booster::L => bd[*y as usize][*x as usize] |= 3 << 4,
+            Booster::X => bd[*y as usize][*x as usize] |= 4 << 4,
+            Booster::R => bd[*y as usize][*x as usize] |= 5 << 4,
         }
     }
 
@@ -326,50 +342,134 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
     }
 }
 
-fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let h = bd.len() as i64;
-    let w = bd[0].len() as i64;
+struct State {
+    bd: Vec<Vec<u8>>,
+    x: i64,
+    y: i64,
+    items: Vec<usize>,
+    manips: Vec<Pos>,
+}
 
-    let mut cx = sx;
-    let mut cy = sy;
-    let mut items = vec![0; 4];
-    let mut manips = vec![(0, 0), (1, 1), (1, 0), (1, -1)];
-
-    for &(dx, dy) in manips.iter() {
-        let tx = cx + dx;
-        let ty = cy + dy;
-        if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
-            continue;
+impl State {
+    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> State {
+        State {
+            bd: bd.clone(),
+            x,
+            y,
+            items: vec![0; 5 + 1],
+            manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
         }
-        if bd[ty as usize][tx as usize] & 1 != 0 {
-            continue;
-        }
-        bd[ty as usize][tx as usize] |= 2;
     }
-    // bd[cy as usize][cx as usize] |= 2;
 
-    let mut ret = vec![];
+    fn move_to(&mut self, x: i64, y: i64) {
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
 
-    while let Some((nx, ny)) = nearest(&bd, cx, cy) {
-        // dbg!((nx, ny));
-        ret.push(Command::Move(nx - cx, ny - cy));
-        cx = nx;
-        cy = ny;
-
-        for &(dx, dy) in manips.iter() {
-            let tx = cx + dx;
-            let ty = cy + dy;
+        for &(dx, dy) in self.manips.iter() {
+            let tx = x + dx;
+            let ty = y + dy;
             if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
                 continue;
             }
-            if bd[ty as usize][tx as usize] & 1 != 0 {
+
+            let mut ok = true;
+            for (px, py) in pass_cells(x, y, tx, ty) {
+                if self.bd[py as usize][px as usize] & 1 != 0 {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok {
                 continue;
             }
-            bd[ty as usize][tx as usize] |= 2;
+
+            self.bd[ty as usize][tx as usize] |= 2;
         }
-        // bd[cy as usize][cx as usize] |= 2;
-        // print_bd(&bd);
-        // print_ans(&ret);
+        if self.bd[y as usize][x as usize] >> 4 != 0 {
+            self.items[(self.bd[y as usize][x as usize] >> 4) as usize] += 1;
+            self.bd[y as usize][x as usize] &= 0xf;
+        }
+
+        self.x = x;
+        self.y = y;
+    }
+}
+
+fn pass_cells(x1: i64, y1: i64, x2: i64, y2: i64) -> Vec<(i64, i64)> {
+    if x1 == x2 {
+        (min(y1, y2)..=max(y1, y2)).map(|y| (x1, y)).collect()
+    } else if x1 > x2 {
+        pass_cells(x2, y2, x1, y1)
+    } else {
+        let mut ret = vec![];
+        let mut grad = Rational::new((y2-y1) as _, (x2-x1) as _);
+        let half = Rational::new(1, 2);
+        for x in x1..=x2 {
+            let l = max(Rational::from_integer(x1 as _),
+                Rational::from_integer(x as _) - half);
+            let r = min(Rational::from_integer(x2 as _),
+                Rational::from_integer(x as _) + half);
+
+            let ly: Rational =
+                Rational::from_integer(y1 as _) + (l - Rational::from_integer(x1 as _)) * grad + half;
+            let ry: Rational =
+                Rational::from_integer(y1 as _) + (r - Rational::from_integer(x1 as _)) * grad + half;
+
+            let lo = min(*ly.floor().numer(), *ry.floor().numer());
+            let hi = max(*ly.ceil().numer(), *ry.ceil().numer());
+
+            // dbg!((x, l, r, lo, hi));
+
+            for y in lo..hi {
+                ret.push((x, y as i64));
+            }
+        }
+        ret
+    }
+}
+
+#[test]
+fn test_pass_cells() {
+    assert_eq!(pass_cells(0, 0, -1, 1), vec![(-1, 1), (0, 0)]);
+    assert_eq!(pass_cells(0, 0, 1, 1), vec![(0, 0), (1, 1)]);
+
+    assert_eq!(pass_cells(0, 0, -2, 1), vec![(-2, 1), (-1, 0), (-1, 1), (0, 0)]);
+    assert_eq!(pass_cells(0, 0, -3, 1), vec![(-3, 1), (-2, 1), (-1, 0), (0, 0)]);
+
+    assert_eq!(pass_cells(0, 0, 1, 2), vec![(0, 0), (0, 1), (1, 1), (1, 2)]);
+    assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
+}
+
+fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+    let h = bd.len() as i64;
+    let w = bd[0].len() as i64;
+
+    let mut state = State::new(bd, sx, sy);
+    let mut ret = vec![];
+
+    loop {
+        let n = nearest(&state.bd, state.x, state.y);
+        if n.is_none() {
+            break;
+        }
+        let (nx, ny) = n.unwrap();
+
+        while state.items[1] > 0 {
+            state.items[1] -= 1;
+
+            for i in 0.. {
+                let dy = if i % 2 == 0 {-2 - i/2} else {2 + i/2};
+                if !state.manips.contains(&(1, dy)) {
+                    ret.push(Command::AttachManip(1, dy));
+                    state.manips.push((1, dy));
+                    break;
+                }
+            }
+        }
+
+        ret.push(Command::Move(nx - state.x, ny - state.y));
+        state.move_to(nx, ny);
+        // print_bd(&state.bd);
     }
 
     ret
@@ -377,7 +477,7 @@ fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
 
 //-----
 
-fn solve_lightning(name: &str, input: &Input) -> Result<()> {
+fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()> {
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
@@ -389,8 +489,11 @@ fn solve_lightning(name: &str, input: &Input) -> Result<()> {
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!("Score for {}: score = {}", name, score);
+    println!("Score for {}: score = {}, best_score = {}", name, score, bs.unwrap_or(-1));
 
+    if show_solution {
+        println!("{}", encode_commands(&ans));
+    }
     save_solution(LIGHTNING_DIR, name, &ans, score)
 }
 
@@ -460,9 +563,9 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
 fn main() -> Result<()> {
     match Opt::from_args() {
-        Opt::Solve { input } => {
+        Opt::Solve { input, show_solution } => {
             let problem = read_input(&input)?;
-            solve_lightning(&get_problem_name(&input), &problem)?;
+            solve_lightning(&get_problem_name(&input), &problem, show_solution)?;
         }
         Opt::Pack => {
             let dir = LIGHTNING_DIR;
