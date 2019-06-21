@@ -1,16 +1,24 @@
+use regex::Regex;
 use structopt::StructOpt;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-use std::fs::File;
+use std::fs::{self, File};
 use std::cmp::{min, max};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::env;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 type Board = Vec<Vec<u8>>;
 
 #[derive(Debug, StructOpt)]
-struct Opt {
-    input: PathBuf,
+enum Opt {
+    #[structopt(name = "solve")]
+    Solve {
+        input: PathBuf,
+    },
+
+    #[structopt(name = "pack")]
+    Pack,
 }
 
 type Pos = (i64, i64);
@@ -22,7 +30,7 @@ const VECT: &[Pos] = &[
     (0, -1),
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Booster {
     B,
     F,
@@ -40,7 +48,7 @@ enum Command {
     StartDrill,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Input {
     map: Vec<Pos>,
     init_pos: Pos,
@@ -147,24 +155,25 @@ fn print_bd(bd: &Vec<Vec<u8>>) {
     eprintln!();
 }
 
-fn print_ans(ans: &[Command]) {
+fn encode_commands(ans: &[Command]) -> String {
+    let mut ret = String::new();
     for cmd in ans.iter() {
         match cmd {
-            Command::Move(0, 1) => print!("W"),
-            Command::Move(0, -1) => print!("S"),
-            Command::Move(-1, 0) => print!("A"),
-            Command::Move(1, 0) => print!("D"),
+            Command::Move(0, 1) => ret += "W",
+            Command::Move(0, -1) => ret += "S",
+            Command::Move(-1, 0) => ret += "A",
+            Command::Move(1, 0) => ret += "D",
             Command::Move(_, _) => panic!("Invalid move: {:?}", cmd),
 
-            Command::Nop => print!("Z"),
-            Command::Turn(true) => print!("E"),
-            Command::Turn(false) => print!("Q"),
-            Command::AttachManip(dx, dy) => print!("B({},{})", dx, dy),
-            Command::AttachWheel => print!("F"),
-            Command::StartDrill => print!("L"),
+            Command::Nop => ret += "Z",
+            Command::Turn(true) => ret += "E",
+            Command::Turn(false) => ret += "Q",
+            Command::AttachManip(dx, dy) => ret += &format!("B({},{})", dx, dy),
+            Command::AttachWheel => ret += "F",
+            Command::StartDrill => ret += "L",
         }
     }
-    println!();
+    ret
 }
 
 fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
@@ -240,6 +249,8 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
     bd
 }
+
+// solution
 
 fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
     let h = bd.len() as i64;
@@ -351,21 +362,132 @@ fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command>{
     ret
 }
 
-fn main() -> Result<()> {
-    let opt = Opt::from_args();
+//-----
 
-    let mut input = read_input(&opt.input)?;
+fn solve_lightning(name: &str, input: &Input) -> Result<()> {
+    let mut input = input.clone();
     let (w, h) = normalize(&mut input);
-
     let mut bd = build_map(&input, w, h);
-    // print_bd(&bd);
-
     let ans = solve(&mut bd, input.init_pos.0, input.init_pos.1);
-    // dbg!(&ans);
-    print_ans(&ans);
+    // print_ans(&ans);
 
-    let score = ans.len();
-    eprintln!("Score: {}", score);
+    let score = ans.len() as i64;
+    // eprintln!("Score: {}", score);
 
+    let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
+
+    println!(
+        "Score for {}: score = {}",
+        name, score
+    );
+
+    save_solution(LIGHTNING_DIR, name, &ans, score)
+}
+
+//---------
+// Storage
+
+const LIGHTNING_DIR: &str = "results";
+const FULL_DIR: &str = "results_full";
+
+fn touch_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    if !path.exists() {
+        fs::create_dir_all(path)?;
+    }
+    Ok(())
+}
+
+fn get_result_dir(root: &str, name: &str) -> Result<PathBuf> {
+    let pb = Path::new(root).join(name);
+    touch_dir(&pb)?;
+    Ok(pb)
+}
+
+fn get_problem_name<P: AsRef<Path>>(model: P) -> String {
+    let re = Regex::new(r".*/prob-((\d|\w)+)\.desc").unwrap();
+    let t = model.as_ref().to_string_lossy();
+    let caps = re.captures(&t).unwrap();
+    caps.get(1).unwrap().as_str().to_owned()
+}
+
+fn get_best_score(root: &str, name: &str) -> Result<Option<i64>> {
+    let pb = get_result_dir(root, name)?;
+
+    let re2 = Regex::new(r"/.+/(\d+)\.sol")?;
+    let mut results: Vec<(i64, String)> = fs::read_dir(&pb)?
+        .map(|e| {
+            let s = e.unwrap().path().to_string_lossy().into_owned();
+            let n = {
+                let caps = re2.captures(&s).unwrap();
+                caps.get(1).unwrap().as_str().parse().unwrap()
+            };
+            (n, s)
+        })
+        .collect();
+    results.sort();
+
+    Ok(if results.len() == 0 {
+        None
+    } else {
+        Some(results[0].0)
+    })
+}
+
+fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<()> {
+    // println!("*****: {:?} {:?} {:?} {}", root, name, score);
+
+    let best = get_best_score(root, name)?.unwrap_or(0);
+    if best == 0 || best > score {
+        println!("* Best score for {}: {} -> {}", name, best, score);
+        let pb = get_result_dir(root, name)?;
+        fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
+    }
+    Ok(())
+}
+
+//-----
+
+fn main() -> Result<()> {
+    match Opt::from_args() {
+        Opt::Solve{ input } => {
+            let problem = read_input(&input)?;
+            solve_lightning(&get_problem_name(&input), &problem)?;
+        }
+        Opt::Pack => {
+            let dir = LIGHTNING_DIR;
+
+            let tmp = Path::new("tmp");
+            if tmp.is_dir() {
+                fs::remove_dir_all(tmp)?;
+            }
+            fs::create_dir_all(tmp)?;
+
+            let mut files = vec![];
+
+            let re = Regex::new(r"[a-z_]+/(.+)").unwrap();
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                let name = {
+                    let t = path.to_string_lossy();
+                    let caps = re.captures(&t).unwrap();
+                    caps.get(1).unwrap().as_str().to_owned()
+                };
+
+                if let Some(best) = get_best_score(dir, &name)? {
+                    let fname = format!("{}.sol", name);
+                    fs::copy(path.join(format!("{}.sol", best)), tmp.join(&fname))?;
+                    files.push(fname);
+                }
+            }
+
+            env::set_current_dir(tmp)?;
+            std::process::Command::new("zip")
+                .arg("../submission.zip")
+                .args(&files)
+                .status()?;
+        }
+    }
     Ok(())
 }
