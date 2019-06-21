@@ -16,10 +16,10 @@ struct Opt {
 type Pos = (i64, i64);
 
 const VECT: &[Pos] = &[
-    (0, 1),
-    (0, -1),
     (1, 0),
     (-1, 0),
+    (0, 1),
+    (0, -1),
 ];
 
 #[derive(Debug)]
@@ -273,6 +273,7 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
 
             if bd[ny as usize][nx as usize] & 2 == 0 {
                 found = Some((nx, ny));
+                // dbg!((&found, bd[ny as usize][nx as usize]));
                 break;
             }
         }
@@ -287,9 +288,13 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
 
     let (mut tx, mut ty) = found.unwrap();
 
+    // let mut route_len = 0;
+
     loop {
+        // route_len += 1;
         let n = prev[&(tx, ty)];
         if n == (x, y) {
+            // dbg!((route_len, tx, ty, x, y));
             return Some((tx, ty));
         }
         tx = n.0;
@@ -298,23 +303,26 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
 }
 
 fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command>{
-    let w = bd.len() as i64;
-    let h = bd[0].len() as i64;
+    let h = bd.len() as i64;
+    let w = bd[0].len() as i64;
 
     let mut cx = sx;
     let mut cy = sy;
     let mut items = vec![0; 4];
-    let mut manips = vec![/*(1, 1), (1, 0), (1, -1), */(0, 0)];
+    let mut manips = vec![(0, 0), (1, 1), (1, 0), (1, -1)];
 
-    // for &(dx, dy) in manips.iter() {
-    //     let tx = cx + dx;
-    //     let ty = cy + dy;
-    //     if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
-    //         continue;
-    //     }
-    //     bd[ty as usize][tx as usize] |= 2;
-    // }
-    bd[cy as usize][cx as usize] |= 2;
+    for &(dx, dy) in manips.iter() {
+        let tx = cx + dx;
+        let ty = cy + dy;
+        if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+            continue;
+        }
+        if bd[ty as usize][tx as usize] & 1 != 0 {
+            continue;
+        }
+        bd[ty as usize][tx as usize] |= 2;
+    }
+    // bd[cy as usize][cx as usize] |= 2;
 
     let mut ret = vec![];
 
@@ -323,19 +331,20 @@ fn solve(bd: &mut Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command>{
         ret.push(Command::Move(nx-cx, ny-cy));
         cx = nx;
         cy = ny;
-        // for &(dx, dy) in manips.iter() {
-        //     let tx = cx + dx;
-        //     let ty = cy + dy;
-        //     if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
-        //         continue;
-        //     }
-        //     bd[ty as usize][tx as usize] |= 2;
-        // }
 
-        bd[cy as usize][cx as usize] |= 2;
-
+        for &(dx, dy) in manips.iter() {
+            let tx = cx + dx;
+            let ty = cy + dy;
+            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                continue;
+            }
+            if bd[ty as usize][tx as usize] & 1 != 0 {
+                continue;
+            }
+            bd[ty as usize][tx as usize] |= 2;
+        }
+        // bd[cy as usize][cx as usize] |= 2;
         // print_bd(&bd);
-
         // print_ans(&ret);
     }
 
@@ -346,16 +355,17 @@ fn main() -> Result<()> {
     let opt = Opt::from_args();
 
     let mut input = read_input(&opt.input)?;
-    dbg!(input.init_pos);
     let (w, h) = normalize(&mut input);
-    dbg!(input.init_pos);
 
     let mut bd = build_map(&input, w, h);
-    print_bd(&bd);
+    // print_bd(&bd);
 
     let ans = solve(&mut bd, input.init_pos.0, input.init_pos.1);
     // dbg!(&ans);
     print_ans(&ans);
+
+    let score = ans.len();
+    eprintln!("Score: {}", score);
 
     Ok(())
 }
