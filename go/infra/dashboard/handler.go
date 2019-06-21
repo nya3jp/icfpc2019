@@ -7,6 +7,8 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 
 	"cloud.google.com/go/storage"
 )
@@ -38,15 +40,45 @@ func handle(w http.ResponseWriter, r *http.Request, f func(context.Context) erro
 	}
 }
 
+var jst *time.Location
+
+func init() {
+	var err error
+	jst, err = time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		panic(err)
+	}
+}
+
+func localTime(t time.Time) time.Time {
+	return t.In(jst)
+}
+
+var templateFuncs = template.FuncMap{
+	"localTime": localTime,
+}
+
+func parseTemplate(filenames ...string) (*template.Template, error) {
+	t := template.New(filepath.Base(filenames[0]))
+	t.Funcs(templateFuncs)
+	for _, fn := range filenames {
+		if _, err := t.ParseFiles(filepath.Join("infra/dashboard/templates", fn)); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
+}
+
 type solution struct {
 	ID        int
 	Solver    string
 	Problem   string
 	Evaluator string
 	Score     int32
+	Submitted time.Time
 }
 
-var dashboardTmpl = template.Must(template.ParseFiles("infra/dashboard/templates/dashboard.html"))
+var dashboardTmpl = template.Must(parseTemplate("dashboard.html"))
 
 func (h *handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	handle(w, r, func(ctx context.Context) error {
@@ -66,7 +98,8 @@ SELECT
   solver,
   problem,
   evaluator,
-  score
+  score,
+  submitted
 FROM solutions
 INNER JOIN (
   SELECT
@@ -96,7 +129,7 @@ func scanSolutions(rows *sql.Rows) ([]*solution, error) {
 	var ss []*solution
 	for rows.Next() {
 		var s solution
-		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Evaluator, &s.Score); err != nil {
+		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
 			return nil, err
 		}
 		ss = append(ss, &s)
