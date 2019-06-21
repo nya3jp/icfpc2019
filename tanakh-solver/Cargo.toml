@@ -1,0 +1,8 @@
+[package]
+name = "tanakh-solver"
+version = "0.1.0"
+authors = ["tanakh"]
+edition = "2018"
+
+[dependencies]
+structopt = "*"
