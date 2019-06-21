@@ -5,5 +5,6 @@ go 1.12
 require (
 	cloud.google.com/go v0.40.0
 	github.com/go-sql-driver/mysql v1.4.1
+	github.com/julienschmidt/httprouter v1.2.0
 	google.golang.org/appengine v1.6.1 // indirect
 )

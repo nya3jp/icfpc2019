@@ -1,0 +1,28 @@
+{{ define "content" }}
+
+<h1 class="my-4">Best Solutions</h1>
+
+<table class="table table-sm">
+  <thead>
+  <tr>
+    <th scope="col">Problem</th>
+    <th scope="col">Steps</th>
+    <th scope="col">Solver</th>
+    <th scope="col">Time</th>
+    <th scope="col"></th>
+  </tr>
+  </thead>
+  <tbody>
+  {{ range .BestSolutions }}
+    <tr>
+      <td><a href="/dashboard/problem/{{ .Problem }}">{{ .Problem }}</a></td>
+      <td>{{ .Score }}</td>
+      <td>{{ .Solver }}</td>
+      <td>{{ (localTime .Submitted).Format "2006-01-02 15:04:05" }}</td>
+      <td><a href="https://storage.googleapis.com/sound-type-system/solutions/{{ .ID }}/solution.txt">Solution</a></td>
+    </tr>
+  {{ end }}
+  </tbody>
+</table>
+
+{{ end }}

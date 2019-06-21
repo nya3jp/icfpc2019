@@ -11,23 +11,20 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"github.com/julienschmidt/httprouter"
 )
 
 type handler struct {
-	mux *http.ServeMux
-	db  *sql.DB
-	cl  *storage.Client
+	db *sql.DB
+	cl *storage.Client
 }
 
 func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
-	mux := http.NewServeMux()
-	h := &handler{
-		mux: mux,
-		db:  db,
-		cl:  cl,
-	}
-	mux.HandleFunc("/dashboard", h.handleDashboard)
-	return mux
+	h := &handler{db: db, cl: cl}
+	r := httprouter.New()
+	r.Handle("GET", "/dashboard", h.handleIndex)
+	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
+	return r
 }
 
 func handle(w http.ResponseWriter, r *http.Request, f func(context.Context) error) {
@@ -78,16 +75,47 @@ type solution struct {
 	Submitted time.Time
 }
 
-var dashboardTmpl = template.Must(parseTemplate("dashboard.html"))
+var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
 
-func (h *handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
+type indexValues struct {
+	BestSolutions []*solution
+}
+
+func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	handle(w, r, func(ctx context.Context) error {
 		ss, err := h.queryBestSolutions(ctx)
 		if err != nil {
 			return err
 		}
 
-		return dashboardTmpl.Execute(w, ss)
+		v := &indexValues{
+			BestSolutions: ss,
+		}
+		return indexTmpl.Execute(w, v)
+	})
+}
+
+var problemTmpl = template.Must(parseTemplate("base.html", "problem.html"))
+
+type problemValues struct {
+	Problem   string
+	Solutions []*solution
+}
+
+func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+	problem := ps.ByName("problem")
+
+	handle(w, r, func(ctx context.Context) error {
+		ss, err := h.querySolutionsByProblem(ctx, problem)
+		if err != nil {
+			return err
+		}
+
+		v := &problemValues{
+			Problem:   problem,
+			Solutions: ss,
+		}
+		return problemTmpl.Execute(w, v)
 	})
 }
 
@@ -118,6 +146,28 @@ INNER JOIN (
 ) t2 USING (id)
 ORDER BY problem ASC
 `)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSolutions(rows)
+}
+
+func (h *handler) querySolutionsByProblem(ctx context.Context, problem string) ([]*solution, error) {
+	rows, err := h.db.QueryContext(ctx, `
+SELECT
+  id,
+  solver,
+  problem,
+  evaluator,
+  score,
+  submitted
+FROM solutions
+WHERE
+  valid AND
+  problem = ?
+ORDER BY score ASC, id ASC
+`, problem)
 	if err != nil {
 		return nil, err
 	}
