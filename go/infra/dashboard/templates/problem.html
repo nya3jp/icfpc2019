@@ -2,7 +2,22 @@
 
 <h1 class="my-4">Problem: {{ .Problem }}</h1>
 
-<img src="https://storage.googleapis.com/sound-type-system/problems/{{ .Problem }}.png">
+<table id="player">
+  <tr>
+    <td><div><canvas style="display: block" id="canvas" /></div></td>
+    <td valign="top">
+      <div id="main_section" valign="top"></div>
+      <div>Execution speed: <text id="speed_text"></text></div>
+      <br />
+      <table border="0">
+        <tr><td>r</td><td>Prepare/Reset</td></tr>
+        <tr><td>Space (s)</td><td>Start/Pause execution</td></tr>
+        <tr><td>Right (d)</td><td>Increase speed</td></tr>
+        <tr><td>Left (a)</td><td>Decrease speed</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
 
 <h2>Solutions</h2>
 
@@ -23,10 +38,54 @@
       <td>{{ .Score }}</td>
       <td>{{ .Solver }}</td>
       <td>{{ (localTime .Submitted).Format "2006-01-02 15:04:05" }}</td>
-      <td><a href="https://storage.googleapis.com/sound-type-system/solutions/{{ .ID }}/solution.txt">Solution</a></td>
+      <td>
+        <a href="javascript:loadSolution({{ .ID }})">Play</a>
+        <a href="https://storage.googleapis.com/sound-type-system/solutions/{{ .ID }}/solution.txt">Solution</a>
+      </td>
     </tr>
   {{ end }}
   </tbody>
 </table>
+
+
+
+<script src="/static/lambda.201906220737.js"></script>
+
+<script>render();</script>
+
+<script>
+    async function setInputFile(id, url) {
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw Error('not found: ' + url);
+        }
+        const blob = await res.blob();
+        const comps = url.split('/');
+        const name = comps[comps.length-1];
+        const file = new File([blob], name);
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const input = document.getElementById(id);
+        input.files = dt.files;
+        input.onchange();
+    }
+
+    function loadSolution(id) {
+        setInputFile('submit_solution', 'https://storage.googleapis.com/sound-type-system/solutions/' + id + '/solution.txt');
+        const button = document.getElementById('execute_solution');
+        const ticket = setInterval(() => {
+            if (button.disabled) {
+                return
+            }
+            clearInterval(ticket);
+            button.click();
+        }, 100);
+    }
+
+    setInputFile('submit_task', 'https://storage.googleapis.com/sound-type-system/problems/{{ .Problem }}.desc');
+    {{ if .BestSolution }}
+    loadSolution({{ .BestSolution.ID }});
+    {{ end }}
+</script>
 
 {{ end }}
