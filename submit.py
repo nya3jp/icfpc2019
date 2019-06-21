@@ -26,7 +26,7 @@ class EvalError(Exception):
     pass
 
 
-OP_RE = re.compile(r'[WSADZEQFL]|B\(-?\d+,-?\d+\)')
+OP_RE = re.compile(r'[WSADZEQFLR]|[BT]\(-?\d+,-?\d+\)')
 
 
 def _eval_solution(solution: str) -> int:
