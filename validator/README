@@ -1,0 +1,6 @@
+How to install:
+$ sudo apt-get install nodejs npm
+$ npm install puppeteer
+
+How to run:
+$ nodejs ./validate.js [task] [solution]
