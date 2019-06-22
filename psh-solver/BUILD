@@ -1,7 +1,7 @@
 cc_binary(
   name = "sim",
   srcs = [
-      "main.cc",
+      "simulator_main.cc",
   ],
   deps = [
       "@com_github_gflags_gflags//:gflags",

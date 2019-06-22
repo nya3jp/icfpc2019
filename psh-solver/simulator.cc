@@ -23,7 +23,7 @@ Point ParsePoint(absl::string_view s) {
 
 std::vector<Point> ParseMap(absl::string_view s) {
   std::vector<Point> result;
-  for (auto token : absl::StrSplit(s, ')')) {
+  for (auto token : absl::StrSplit(s, ')', absl::SkipEmpty())) {
     int start = token[0] == ',' ? 2 : 1;
     token = token.substr(start, token.length() - start);
     result.push_back(ParsePoint(token));
@@ -32,6 +32,8 @@ std::vector<Point> ParseMap(absl::string_view s) {
 }
 
 std::vector<std::vector<Point>> ParseObstacles(absl::string_view s) {
+  if (s.empty())
+    return {};
   std::vector<std::vector<Point>> result;
   for (auto token : absl::StrSplit(s, ';')) {
     result.push_back(ParseMap(token));
@@ -40,6 +42,9 @@ std::vector<std::vector<Point>> ParseObstacles(absl::string_view s) {
 }
 
 std::vector<std::pair<Point, Booster>> ParseBoosters(absl::string_view s) {
+  if (s.empty())
+    return {};
+
   std::vector<std::pair<Point, Booster>> result;
   for (auto token : absl::StrSplit(s, ';')) {
     auto p = ParsePoint(token.substr(2, token.length() - 3));
