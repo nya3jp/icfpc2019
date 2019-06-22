@@ -4,10 +4,10 @@ namespace Yuizumi.Icfpc2019
 {
     public class DfsSolver
     {
-        public DfsSolver(Point wrappy, Map map)
+        public DfsSolver(State state)
         {
-            mWrappy = wrappy;
-            mMap = map;
+            mWrappy = state.Wrappies[0];
+            mMap = state.Map;
 
             for (int y = 0; y <= mMap.YSize; y++)
             for (int x = 0; x <= mMap.XSize; x++)
@@ -16,7 +16,7 @@ namespace Yuizumi.Icfpc2019
 
         private const char done = '*';
 
-        private readonly Point mWrappy;
+        private readonly Wrappy mWrappy;
         private readonly Map mMap;
 
         private readonly int mCount = 0;

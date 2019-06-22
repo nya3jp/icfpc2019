@@ -8,10 +8,8 @@ namespace Yuizumi.Icfpc2019
         {
             try
             {
-                string desc = Console.ReadLine();
-                Map map = Map.Parse(desc);
-                Point wrappy = Point.Parse(desc.Split('#')[1]);
-                var solver = new DfsSolver(wrappy, map);
+                State state = State.Parse(Console.ReadLine());
+                var solver = new DfsSolver(state);
                 Console.WriteLine(solver.Solve());
             }
             catch (Exception e)

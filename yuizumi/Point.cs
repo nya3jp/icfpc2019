@@ -13,6 +13,9 @@ namespace Yuizumi.Icfpc2019
         public int X { get; }
         public int Y { get; }
 
+        public static Point operator +(Point p, Delta d)
+            => new Point(p.X + d.X, p.Y + d.Y);
+
         public static Point Parse(string value)
         {
             string[] xy = value.Substring(1, value.Length - 2).Split(',');
