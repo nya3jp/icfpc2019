@@ -144,6 +144,8 @@ class Map {
 
   void Run(int index, const Instruction& inst);
 
+  std::string ToString() const;
+
  private:
   inline size_t Index(const Point& p) const {
     return p.y * width_ + p.x;
