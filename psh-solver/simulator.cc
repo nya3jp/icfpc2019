@@ -320,63 +320,107 @@ void Map::Run(int index, const Instruction& inst) {
   ++num_steps_;
   // TODO record back log.
   CHECK_LT(index, static_cast<int>(wrappers_.size()));
-  auto& wrapper = wrappers_[index];
-  switch (inst.type) {
-    case Instruction::Type::W:
-      Move(&wrapper, Point{0, 1});
-      break;
-    case Instruction::Type::S:
-      Move(&wrapper, Point{0, -1});
-      break;
-    case Instruction::Type::A:
-      Move(&wrapper, Point{-1, 0});
-      break;
-    case Instruction::Type::D:
-      Move(&wrapper, Point{1, 0});
-      break;
-    case Instruction::Type::Q:
-      wrapper.RotateCounterClockwise();
-      Fill(wrapper);
-      break;
-    case Instruction::Type::E:
-      wrapper.RotateClockwise();
-      Fill(wrapper);
-      break;
-    case Instruction::Type::Z:
-      break;
-    case Instruction::Type::B: {
-      CHECK_GT(collected_b_, 0);
-      CHECK(IsPossibleToExtendManipualtor(wrapper, inst.arg));
-      wrapper.AddManipulator(inst.arg);
-      --collected_b_;
-      break;
+  {
+    auto& wrapper = wrappers_[index];
+    switch (wrapper.pending_booster()) {
+      case Booster::B:
+        ++collected_b_;
+        break;
+      case Booster::F:
+        ++collected_f_;
+        break;
+      case Booster::L:
+        ++collected_l_;
+        break;
+      case Booster::R:
+        ++collected_r_;
+        break;
+      case Booster::C:
+        ++collected_c_;
+        break;
+      case Booster::X:
+        // Do nothing.
+        break;
     }
-    case Instruction::Type::F: {
-      CHECK_GT(collected_f_, 0);
-      wrapper.set_fast_count(51); // Including this turn.
-      --collected_f_;
-      break;
+    wrapper.set_pending_booster(Booster::X);
+
+    switch (inst.type) {
+      case Instruction::Type::W:
+        Move(&wrapper, Point{0, 1});
+        break;
+      case Instruction::Type::S:
+        Move(&wrapper, Point{0, -1});
+        break;
+      case Instruction::Type::A:
+        Move(&wrapper, Point{-1, 0});
+        break;
+      case Instruction::Type::D:
+        Move(&wrapper, Point{1, 0});
+        break;
+      case Instruction::Type::Q:
+        wrapper.RotateCounterClockwise();
+        Fill(wrapper);
+        break;
+      case Instruction::Type::E:
+        wrapper.RotateClockwise();
+        Fill(wrapper);
+        break;
+      case Instruction::Type::Z:
+        break;
+      case Instruction::Type::B: {
+        CHECK_GT(collected_b_, 0);
+        CHECK(IsPossibleToExtendManipualtor(wrapper, inst.arg));
+        wrapper.AddManipulator(inst.arg);
+        --collected_b_;
+        break;
+      }
+      case Instruction::Type::F: {
+        CHECK_GT(collected_f_, 0);
+        wrapper.set_fast_count(51); // Including this turn.
+        --collected_f_;
+        break;
+      }
+      case Instruction::Type::L: {
+        CHECK_GT(collected_l_, 0);
+        wrapper.set_drill_count(31);  // Including this turn.
+        --collected_l_;
+        break;
+      }
+      case Instruction::Type::R: {
+        // Note: the reset position created by Wrapper-i will be immediately
+        // appeared to the Wrapper-j where i < j.
+        CHECK_GT(collected_r_, 0);
+        const auto& p = wrapper.point();
+        CHECK(resets_.find(p) != resets_.end());
+        auto iter = booster_map_.find(p);
+        CHECK(iter == booster_map_.end() || iter->second == Booster::X);
+        resets_.insert(p);
+        break;
+      }
+      case Instruction::Type::T: {
+        CHECK(resets_.find(inst.arg) != resets_.end());
+        wrapper.set_point(inst.arg);
+        Fill(wrapper);
+        break;
+      }
+      case Instruction::Type::C: {
+        CHECK_GT(collected_c_, 0);
+        const auto& p = wrapper.point();
+        auto iter = booster_map_.find(p);
+        CHECK(iter != booster_map_.end() && iter->second == Booster::X);
+        wrappers_.emplace_back(p);  // Do not touch wrapper after this.
+        break;
+      }
     }
-    case Instruction::Type::L: {
-      CHECK_GT(collected_l_, 0);
-      wrapper.set_drill_count(31);  // Including this turn.
-      --collected_l_;
-      break;
-    }
-    case Instruction::Type::R:
-    case Instruction::Type::T:  // With arg.
-    case Instruction::Type::C:
-      LOG(FATAL) << "Unknown/Unsupported Instruction Type: " << inst;
   }
 
   // Consume counter.
   {
+    auto& wrapper = wrappers_[index];
     int fast_count = wrapper.fast_count();
     if (fast_count > 0) {
       wrapper.set_fast_count(fast_count - 1);
     }
-  }
-  {
     int drill_count = wrapper.drill_count();
     if (drill_count > 0) {
       wrapper.set_drill_count(drill_count - 1);
@@ -472,31 +516,12 @@ bool Map::MoveInternal(Wrapper* wrapper, const Point& direction) {
   wrapper->set_point(p);
   Fill(*wrapper);
 
+  // TODO collecting algorithm.
   auto iter = booster_map_.find(p);
   if (iter != booster_map_.end()) {
-    switch (iter->second) {
-      case Booster::B:
-        ++collected_b_;
-        break;
-      case Booster::F:
-        ++collected_f_;
-        break;
-      case Booster::L:
-        ++collected_l_;
-        break;
-      case Booster::R:
-        ++collected_r_;
-        break;
-      case Booster::C:
-        ++collected_c_;
-        break;
-      case Booster::X:
-        // Do nothing.
-        break;
-    }
-
     if (iter->second != Booster::X) {
       booster_map_.erase(p);
+      wrapper->set_pending_booster(iter->second);
     }
   }
   return true;

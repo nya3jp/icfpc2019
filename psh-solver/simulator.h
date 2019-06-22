@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <vector>
+#include <set>
 #include <tuple>
 
 #include "absl/types/optional.h"
@@ -132,6 +133,9 @@ class Wrapper {
   int drill_count() const { return drill_count_; }
   void set_drill_count(int count) { drill_count_ = count; }
 
+  Booster pending_booster() const { return pending_booster_; }
+  void set_pending_booster(Booster b) { pending_booster_ = b; }
+
  private:
   Point point_;
   std::vector<Point> manipulators_ = {
@@ -141,6 +145,7 @@ class Wrapper {
   };
   int fast_count_ = 0;
   int drill_count_ = 0;
+  Booster pending_booster_ = Booster::X;
 };
 
 class Map {
@@ -184,6 +189,7 @@ class Map {
   std::size_t height_;
   std::vector<Cell> map_;
   std::map<Point, Booster> booster_map_;
+  std::set<Point> resets_;
 
   int num_steps_ = 0;
   int remaining_ = 0;
