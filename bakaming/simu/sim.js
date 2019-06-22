@@ -12,6 +12,14 @@ let lobot;
 let manipList;
 let flags;
 
+function showinfo(){
+  let info = document.getElementById("info");
+  info.value = "";
+  info.value += "x:" + String(lobot[0]) + " y:" + String(lobot[1])+"\n";
+  info.value += "maniplist:" + JSON.stringify(manipList) +"\n";
+  info.value += "maniplist:" + JSON.stringify(flags) +"\n";
+}
+
 function addWall(wallList){
   for(i in wallList){
     let jstart = Math.min(wallList[i][0][0],wallList[i][1][0]);
@@ -465,11 +473,18 @@ function mapStatusUpdate(move){
   updateflags();
 }
 
-function init(){
-
+function valueinit(){
   wall = Array.from(new Array(MAX_X), () => new Array(MAX_Y).fill(0));
   map = Array.from(new Array(MAX_X), () => new Array(MAX_Y).fill(0));
   sweep = Array.from(new Array(MAX_X), () => new Array(MAX_Y).fill(0));
+  mapMaxX = 0;
+  mapMaxY = 0;
+  return;
+}
+
+function init(){
+
+  valueinit();
 
   let inputStr = document.getElementById("input").value;
 
@@ -490,16 +505,16 @@ function init(){
   setStart(startPoint);
 
   let boostPoint = inputStr[3];
-  setBoost(boostPoint);
-
-  render();
-
+  if(boostPoint.length > 0){
+    setBoost(boostPoint);
+  }
   document.body.onkeydown = function(e){
     if(moovKeys[e.keyCode]){
       let move = moovKeys[e.keyCode];
       ansStrUpdate(move);
       mapStatusUpdate(move);
       render();
+      showinfo();
       document.getElementById("output").value = ansStr;
     }
   };
@@ -508,4 +523,29 @@ function init(){
   document.getElementById("output").value = "";
   ansStr = "";
 
+  render();
+  showinfo();
+
 }
+
+  let urlParams = new URLSearchParams(window.location.search);
+  let problem = urlParams.get('problem');
+
+  if(problem != null){
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "https://storage.googleapis.com/sound-type-system/problems/"+problem+".desc", true);
+    xhr.onload = function (e) {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          document.getElementById("input").value = xhr.responseText;
+          init();
+        } else {
+          console.error(xhr.statusText);
+        }
+      }
+    };
+    xhr.onerror = function (e) {
+      console.error(xhr.statusText);
+    };
+    xhr.send(null);
+  }
