@@ -7,14 +7,19 @@ _DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
 
 
 def _create_polygon(grid, tSize):
-    # TODO(yuizumi): Handle the case with grid[0][0].
 
     def cell(x, y):
         if (x >= 0) and (x < tSize) and (y >= 0) and (y < tSize):
             return grid[y][x]
         return '#'
 
-    (x, y) = (0, 0)
+    for y in range(tSize):
+        for x in range(tSize):
+            if grid[y][x] != '#':
+                (x0, y0) = (x, y)
+                break
+
+    (x, y) = (x0, y0)
     yield (x, y)
 
     (dx, dy) = (1, 0)
@@ -49,7 +54,7 @@ def _create_polygon(grid, tSize):
                 (dx, dy) = (dy, -dx)
 
         (x, y) = (x + dx, y + dy)
-        if (x, y) == (0, 0):
+        if (x, y) == (x0, y0):
             return
 
 
