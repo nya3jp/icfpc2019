@@ -110,8 +110,8 @@ func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestSco
 	hash := hex.EncodeToString(hbin[:])
 
 	row := tx.QueryRowContext(ctx, `
-SELECT MIN(score) FROM solutions WHERE valid AND problem = ?`, s.Problem)
-	if err := row.Scan(&lastBestScore); err != nil && err != sql.ErrNoRows {
+SELECT IFNULL(MIN(score), 0) FROM solutions WHERE valid AND problem = ?`, s.Problem)
+	if err := row.Scan(&lastBestScore); err != nil {
 		return 0, 0, err
 	}
 
