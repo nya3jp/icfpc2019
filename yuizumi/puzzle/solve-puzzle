@@ -13,11 +13,7 @@ def _create_polygon(grid, tSize):
             return grid[y][x]
         return '#'
 
-    for y in range(tSize):
-        for x in range(tSize):
-            if grid[y][x] != '#':
-                (x0, y0) = (x, y)
-                break
+    (x0, y0) = (0, 0)
 
     (x, y) = (x0, y0)
     yield (x, y)
