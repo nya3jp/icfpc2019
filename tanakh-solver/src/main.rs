@@ -36,7 +36,8 @@ enum Opt {
 
 type Pos = (i64, i64);
 
-const VECT: &[Pos] = &[(1, 0), (-1, 0), (0, 1), (0, -1)];
+// const VECT: &[Pos] = &[(-1, 0), (1, 0), (0, 1), (0, -1)];
+const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
@@ -293,72 +294,113 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
-    let mut q = VecDeque::new();
-    q.push_back((x, y));
+    /*
+        let mut q = VecDeque::new();
+        q.push_back((x, y));
 
-    let mut found = None;
-    let mut prev = BTreeMap::<Pos, Pos>::new();
+        let mut found = None;
+        let mut prev = BTreeMap::<Pos, Pos>::new();
 
-    while let Some((cx, cy)) = q.pop_front() {
-        for &(dx, dy) in VECT.iter() {
-            let nx = cx + dx;
-            let ny = cy + dy;
+        while let Some((cx, cy)) = q.pop_front() {
+            for &(dx, dy) in VECT.iter() {
+                let nx = cx + dx;
+                let ny = cy + dy;
 
-            if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                continue;
-            }
-
-            if bd[ny as usize][nx as usize] & 1 != 0 {
-                continue;
-            }
-
-            if prev.contains_key(&(nx, ny)) {
-                continue;
-            }
-
-            prev.insert((nx, ny), (cx, cy));
-            q.push_back((nx, ny));
-
-            if bd[ny as usize][nx as usize] & 2 == 0
-                && if has_prios {
-                    bd[ny as usize][nx as usize] & 4 != 0
-                } else {
-                    true
+                if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    continue;
                 }
-            {
-                found = Some((nx, ny));
-                // dbg!((&found, bd[ny as usize][nx as usize]));
+
+                if bd[ny as usize][nx as usize] & 1 != 0 {
+                    continue;
+                }
+
+                if prev.contains_key(&(nx, ny)) {
+                    continue;
+                }
+
+                prev.insert((nx, ny), (cx, cy));
+                q.push_back((nx, ny));
+
+                if bd[ny as usize][nx as usize] & 2 == 0
+                    && if has_prios {
+                        bd[ny as usize][nx as usize] & 4 != 0
+                    } else {
+                        true
+                    }
+                {
+                    found = Some((nx, ny));
+                    // dbg!((&found, bd[ny as usize][nx as usize]));
+                    break;
+                }
+            }
+            if found.is_some() {
                 break;
             }
         }
-        if found.is_some() {
-            break;
+
+        if found.is_none() {
+            return None;
+        }
+
+
+        let (mut tx, mut ty) = found.unwrap();
+
+        // let mut route_len = 0;
+
+        loop {
+            // route_len += 1;
+            let n = prev[&(tx, ty)];
+            if n == (x, y) {
+                // dbg!((route_len, tx, ty, x, y));
+                return Some((tx, ty));
+            }
+            tx = n.0;
+            ty = n.1;
+        }
+    */
+
+    let mut best_score = 0xffffffff;
+    let mut ret = None;
+
+    for (dx, dy) in VECT.iter() {
+        let cx = x + dx;
+        let cy = y + dy;
+
+        if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+            continue;
+        }
+
+        if bd[cy as usize][cx as usize] & 1 != 0 {
+            continue;
+        }
+
+        if let Some(dist) = nearest_empty_dist(bd, cx, cy, has_prios) {
+            // dbg!((cx, cy, dist));
+            if dist < best_score {
+                best_score = dist;
+                ret = Some((cx, cy));
+            }
         }
     }
 
-    if found.is_none() {
-        return None;
-    }
 
-    let (mut tx, mut ty) = found.unwrap();
-
-    // let mut route_len = 0;
-
-    loop {
-        // route_len += 1;
-        let n = prev[&(tx, ty)];
-        if n == (x, y) {
-            // dbg!((route_len, tx, ty, x, y));
-            return Some((tx, ty));
-        }
-        tx = n.0;
-        ty = n.1;
-    }
+    ret
 }
 
-fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<usize> {
+fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<usize> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
+
+    if bd[y as usize][x as usize] & 2 == 0
+        && if has_prios {
+            bd[y as usize][x as usize] & 4 != 0
+        } else {
+            true
+        }
+    {
+        return Some(0);
+    }
+
 
     let mut q = VecDeque::new();
     q.push_back((x, y, 0));
@@ -386,7 +428,13 @@ fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<usize> {
             close.insert((nx, ny));
             q.push_back((nx, ny, dep + 1));
 
-            if bd[ny as usize][nx as usize] & 2 == 0 {
+            if bd[ny as usize][nx as usize] & 2 == 0
+                && if has_prios {
+                    bd[ny as usize][nx as usize] & 4 != 0
+                } else {
+                    true
+                }
+            {
                 return Some(dep + 1);
             }
         }
@@ -626,7 +674,7 @@ impl State {
         if self.rest == 0 {
             0
         } else {
-            nearest_empty_dist(&self.bd, self.x, self.y).unwrap()
+            nearest_empty_dist(&self.bd, self.x, self.y, false).unwrap()
         }
     }
 
@@ -698,6 +746,7 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
 
     let mut state = State::new(bd, sx, sy);
     let mut ret = vec![];
+    state.move_to(sx, sy);
 
     loop {
         let n = nearest(&state.bd, state.x, state.y, state.prios > 0);
@@ -720,10 +769,36 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
             }
         }
 
-        ret.push(Command::Move(nx - state.x, ny - state.y));
+        let dx = nx - state.x;
+        let dy = ny - state.y;
+
+        // dbg!((dx, dy, &state.manips));
+
+        // 移動する方向にモップを回す
+        // let mut rot_cnt = 0;
+        // while !state.manips.contains(&(dx, dy)) {
+        //     state.rotate(true);
+        //     rot_cnt += 1;
+        // }
+
+        // if rot_cnt == 0 {
+        // } else if rot_cnt == 1 {
+        //     ret.push(Command::Turn(true));
+        // } else if rot_cnt == 2 {
+        //     ret.push(Command::Turn(true));
+        //     ret.push(Command::Turn(true));
+        // } else {
+        //     ret.push(Command::Turn(false));
+        // }
+
+        // dbg!((rot_cnt, &state.manips));
+
+        // 移動
+        ret.push(Command::Move(dx, dy));
         state.move_to(nx, ny);
 
         // print_bd(&state.bd);
+        // eprintln!("{}", &encode_commands(&ret));
     }
 
     ret
@@ -746,6 +821,7 @@ fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
         let (_, cmd) = rec(&mut state, &cand, 10);
         state.apply(&cmd);
         ret.push(cmd);
+        print_bd(&state.bd);
     }
 
     ret
