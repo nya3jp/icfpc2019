@@ -418,6 +418,10 @@ function moveR(){
   return;
 }
 
+function moveBS(){
+
+}
+
 function moveT(){
   let str = ansStr.slice(ansStr.lastIndexOf('('));
   str = str.split(',');
@@ -431,6 +435,24 @@ function moveT(){
     }
   }
   return;
+}
+
+function moveBS(){
+  let prevstr = ansStr;
+  init();
+  for(let i = 0;i<prevstr.length;i++){
+    let move = prevstr[i];
+    if((move=== 'B') || (move === 'T')){
+      while(true){
+        ansStr += prevstr[i];
+        i++;
+        if(prevstr[i] === ')') break;
+      }
+    } else {
+      ansStr += move;
+    }
+    mapStatusUpdate(move);
+  }
 }
 
 function mapStatusUpdate(move){
@@ -467,6 +489,9 @@ function mapStatusUpdate(move){
       break;
     case "T":
       moveT();
+      break;
+    case "BS":
+      moveBS();
       break;
     default:
   }
@@ -528,24 +553,24 @@ function init(){
 
 }
 
-  let urlParams = new URLSearchParams(window.location.search);
-  let problem = urlParams.get('problem');
+let urlParams = new URLSearchParams(window.location.search);
+let problem = urlParams.get('problem');
 
-  if(problem != null){
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "https://storage.googleapis.com/sound-type-system/problems/"+problem+".desc", true);
-    xhr.onload = function (e) {
-      if (xhr.readyState === 4) {
-        if (xhr.status === 200) {
-          document.getElementById("input").value = xhr.responseText;
-          init();
-        } else {
-          console.error(xhr.statusText);
-        }
+if(problem != null){
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "https://storage.googleapis.com/sound-type-system/problems/"+problem+".desc", true);
+  xhr.onload = function (e) {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        document.getElementById("input").value = xhr.responseText;
+        init();
+      } else {
+        console.error(xhr.statusText);
       }
-    };
-    xhr.onerror = function (e) {
-      console.error(xhr.statusText);
-    };
-    xhr.send(null);
-  }
+    }
+  };
+  xhr.onerror = function (e) {
+    console.error(xhr.statusText);
+  };
+  xhr.send(null);
+}
