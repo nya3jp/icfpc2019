@@ -14,9 +14,11 @@ cc_binary(
 cc_library(
   name = "simulator",
   hdrs = [
+      "rational.h",
       "simulator.h",
   ],
   srcs = [
+      "rational.cc",
       "simulator.cc",
   ],
   deps = [
