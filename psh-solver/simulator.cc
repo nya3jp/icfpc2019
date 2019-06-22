@@ -165,6 +165,23 @@ std::ostream& operator<<(std::ostream& os, const Point& point) {
   return os << "(" << point.x << "," << point.y << ")";
 }
 
+std::istream& operator>>(std::istream& is, Point& point) {
+  char c;
+  is >> c;
+  CHECK(c == '(') << "Failed to find '(' when reading point from stream";
+  if(!is) return is;
+  int x, y;
+  is >> x >> c >> y;
+  CHECK(c == ',') << "Failed to find ',' when reading point from stream";
+  if(!is) return is;
+  is >> c;
+  CHECK(c == ')') << "Failed to find ')' when reading point from stream";
+  point.x = x;
+  point.y = y;
+  return is;
+}
+
+
 std::ostream& operator<<(std::ostream& os, const Instruction& inst) {
   os << inst.type;
   switch (inst.type) {
@@ -202,6 +219,35 @@ std::ostream& operator<<(std::ostream& os, const Instruction::Type& type) {
       os << "Unknown(" << static_cast<int>(type) << ")";
   }
   return os;
+}
+
+std::istream& operator>>(std::istream& is, Instruction &inst)
+{
+  char c;
+  is >> c;
+  Instruction::Type t;
+  switch(c) {
+  case 'W': t = Instruction::Type::W; break;
+  case 'S': t = Instruction::Type::S; break;
+  case 'A': t = Instruction::Type::A; break;
+  case 'D': t = Instruction::Type::D; break;
+  case 'Q': t = Instruction::Type::Q; break;
+  case 'E': t = Instruction::Type::E; break;
+  case 'Z': t = Instruction::Type::Z; break;
+  case 'B': t = Instruction::Type::B; break;
+  case 'F': t = Instruction::Type::F; break;
+  case 'L': t = Instruction::Type::L; break;
+  case 'R': t = Instruction::Type::R; break;
+  case 'T': t = Instruction::Type::T; break;
+  case 'C': t = Instruction::Type::C; break;
+  }
+  inst.type = t;
+  if(c == 'B' || c == 'T'){
+    Point arg;
+    is >> arg;
+    inst.arg = arg;
+  }
+  return is;
 }
 
 Desc ParseDesc(const std::string& task) {

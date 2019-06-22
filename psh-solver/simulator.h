@@ -40,6 +40,7 @@ struct Point {
 };
 
 std::ostream& operator<<(std::ostream& os, const Point& point);
+std::istream& operator>>(std::istream& is, Point& point);
 
 enum class Cell : std::uint8_t {
   EMPTY,
@@ -86,6 +87,8 @@ struct Instruction {
 
 std::ostream& operator<<(std::ostream& os, const Instruction& inst);
 std::ostream& operator<<(std::ostream& os, const Instruction::Type& type);
+
+std::istream& operator>>(std::istream& is, Instruction& inst);
 
 Desc ParseDesc(const std::string& task);
 
