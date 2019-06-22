@@ -948,7 +948,7 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!(
+    eprintln!(
         "Score for {}: score = {}, best_score = {}",
         name,
         score,
@@ -957,8 +957,11 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     if show_solution {
         println!("{}", encode_commands(&ans));
+    } else {
+        save_solution(LIGHTNING_DIR, name, &ans, score)?;
     }
-    save_solution(LIGHTNING_DIR, name, &ans, score)
+
+    Ok(())
 }
 
 //---------
@@ -1016,7 +1019,7 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
     let best = get_best_score(root, name)?.unwrap_or(0);
     if best == 0 || best > score {
-        println!("* Best score for {}: {} -> {}", name, best, score);
+        eprintln!("* Best score for {}: {} -> {}", name, best, score);
         let pb = get_result_dir(root, name)?;
         fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
     }
