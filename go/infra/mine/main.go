@@ -24,14 +24,11 @@ import (
 
 const bucket = "sound-type-system"
 
-const slackURL = "https://hooks.slack.com/services/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"
-
-var apiKey string
-
 type args struct {
-	block  int
-	apiKey string
-	submit bool
+	block           int
+	apiKey          string
+	slackWebhookURL string
+	dryRun          bool
 }
 
 func parseArgs() (*args, error) {
@@ -39,7 +36,8 @@ func parseArgs() (*args, error) {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.IntVar(&args.block, "block", -1, "block number")
 	fs.StringVar(&args.apiKey, "apikey", "", "exec API key")
-	fs.BoolVar(&args.submit, "submit", true, "submit")
+	fs.StringVar(&args.slackWebhookURL, "slackwebhookurl", "", "Slack webhook URL to log")
+	fs.BoolVar(&args.dryRun, "dryrun", false, "dry-run")
 	return &args, fs.Parse(os.Args[1:])
 }
 
@@ -60,32 +58,30 @@ func main() {
 			return errors.New("-apikey required")
 		}
 
-		apiKey = args.apiKey
-
-		logf("Start mining block %d", args.block)
-
 		cl, err := storage.NewClient(ctx)
 		if err != nil {
 			return err
 		}
 
-		return doMain(ctx, cl, args.block, args.submit)
+		m := &miner{args, cl}
+		if err := m.Run(ctx); err != nil {
+			m.logf("ERROR: %v", err)
+			return err
+		}
+		m.log("Success!")
+		return nil
 	}(); err != nil {
-		logf("ERROR: %v", err)
 		panic(fmt.Sprint("ERROR: ", err))
 	}
 }
 
-func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) error {
-	puzzlers, err := queryPackages(ctx, cl, "packages/puzzlers/")
-	if err != nil {
-		return err
-	}
+type miner struct {
+	args *args
+	cl   *storage.Client
+}
 
-	taskers, err := queryPackages(ctx, cl, "packages/taskers/")
-	if err != nil {
-		return err
-	}
+func (m *miner) Run(ctx context.Context) error {
+	m.logf("Start mining block %d", m.args.block)
 
 	// TODO: Check timestamp.
 	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -94,20 +90,20 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 	puzzleCh := make(chan string, 1)
 	taskCh := make(chan string, 1)
 	go func() {
-		puzzle, err := runPuzzlers(runCtx, cl, puzzlers, block)
+		name, puzzle, err := m.runPuzzleSolvers(runCtx)
 		if err != nil {
-			logf("ERROR: Failed to run puzzler: %v", err)
+			m.logf("ERROR: Failed to run puzzle solvers: %v", err)
 		} else {
-			logf("Selected puzzle solution: %s", puzzle)
+			m.logf("Selected the puzzle solution by %s", name)
 		}
 		puzzleCh <- puzzle
 	}()
 	go func() {
-		task, err := runTaskers(runCtx, cl, taskers, block)
+		name, task, err := m.runTaskSolvers(runCtx)
 		if err != nil {
-			logf("ERROR: Failed to run tasker: %v", err)
+			m.logf("ERROR: Failed to run task solvers: %v", err)
 		} else {
-			logf("Selected task solution: %s", task)
+			m.logf("Selected the task solution by %s", name)
 		}
 		taskCh <- task
 	}()
@@ -115,21 +111,20 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 	puzzle := <-puzzleCh
 	task := <-taskCh
 
-	if !toSubmit {
+	if m.args.dryRun {
 		return nil
 	}
 
 	if puzzle == "" || task == "" {
-		return errors.New("not submitting")
+		return errors.New("no valid solution pair to the block problem")
 	}
 
-	log("Submitting")
-
-	return submit(ctx, block, puzzle, task)
+	m.log("Submitting...")
+	return m.submit(ctx, puzzle, task)
 }
 
-func queryPackages(ctx context.Context, cl *storage.Client, prefix string) ([]string, error) {
-	h := cl.Bucket(bucket).Objects(ctx, &storage.Query{
+func (m *miner) queryPackages(ctx context.Context, prefix string) ([]string, error) {
+	h := m.cl.Bucket(bucket).Objects(ctx, &storage.Query{
 		Prefix: prefix,
 	})
 	var names []string
@@ -146,9 +141,14 @@ func queryPackages(ctx context.Context, cl *storage.Client, prefix string) ([]st
 	return names, nil
 }
 
-func runPuzzlers(ctx context.Context, cl *storage.Client, puzzlers []string, block int) (string, error) {
+func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	names, err := m.queryPackages(ctx, "packages/solvers/puzzle/")
+	if err != nil {
+		return "", "", nil
+	}
 
 	type result struct {
 		name     string
@@ -158,32 +158,36 @@ func runPuzzlers(ctx context.Context, cl *storage.Client, puzzlers []string, blo
 
 	ch := make(chan *result)
 
-	for _, name := range puzzlers {
+	for _, name := range names {
 		name := name
 		go func() {
-			sol, err := runPuzzler(ctx, cl, block, name)
-			ch <- &result{name, sol, err}
+			solution, err := m.runPuzzleSolver(ctx, name)
+			if err != nil && ctx.Err() == nil {
+				// Retry automatically since puzzle solutions are so important.
+				solution, err = m.runPuzzleSolver(ctx, name)
+			}
+			ch <- &result{name, solution, err}
 		}()
 	}
 
 	done := 0
-	for done < len(puzzlers) {
+	for done < len(names) {
 		select {
 		case r := <-ch:
 			if r.err == nil {
-				logf("Puzzler %s passed: %s", r.name, r.solution)
-				return r.solution, nil
+				m.logf("Puzzle solver %s passed: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, bucket, m.args.block, r.name)
+				return r.name, r.solution, nil
 			}
-			logf("ERROR: Failed to run puzzler %s: %v", r.name, r.err)
+			m.logf("ERROR: Failed to run the puzzle solver %s: %v", r.name, r.err)
 			done++
 		case <-ctx.Done():
-			return "", fmt.Errorf("no puzzler passed before deadline: %v", ctx.Err())
+			return "", "", fmt.Errorf("no puzzle solver passed before deadline: %v", ctx.Err())
 		}
 	}
-	return "", errors.New("all puzzler failed")
+	return "", "", errors.New("all puzzle solver failed")
 }
 
-func runPuzzler(ctx context.Context, cl *storage.Client, block int, name string) (string, error) {
+func (m *miner) runPuzzleSolver(ctx context.Context, name string) (string, error) {
 	t := &task{
 		Cmd: `set -e
 ls -l
@@ -192,25 +196,30 @@ curl -s -d "task=$(cat puzzle.cond)" -d "solution=$(cat $OUT_DIR/out.txt)" https
 grep -q Success $OUT_DIR/validation.txt
 `,
 		Pkgs: []*pkg{
-			{URL: fmt.Sprintf("gs://%s/blocks/%d/block.tar.gz", bucket, block)},
-			{URL: fmt.Sprintf("gs://%s/packages/puzzlers/%s.tar.gz", bucket, name)},
+			{URL: fmt.Sprintf("gs://%s/blocks/%d/block.tar.gz", bucket, m.args.block)},
+			{URL: fmt.Sprintf("gs://%s/packages/solvers/puzzle/%s.tar.gz", bucket, name)},
 		},
-		Out: fmt.Sprintf("gs://%s/results/%d/puzzlers/%s/", bucket, block, name),
+		Out: fmt.Sprintf("gs://%s/results/%d/solvers/puzzle/%s/", bucket, m.args.block, name),
 	}
-	logf("Running puzzler %s", name)
-	if err := runTask(ctx, t); err != nil {
+	m.logf("Running the puzzle solver %s", name)
+	if err := m.runTask(ctx, t); err != nil {
 		return "", err
 	}
-	b, err := readGCSFile(ctx, cl, fmt.Sprintf("results/%d/puzzlers/%s/out.txt", block, name))
+	b, err := m.readGCSFile(ctx, fmt.Sprintf("results/%d/solvers/puzzle/%s/out.txt", m.args.block, name))
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
 }
 
-func runTaskers(ctx context.Context, cl *storage.Client, taskers []string, block int) (string, error) {
+func (m *miner) runTaskSolvers(ctx context.Context) (name, solution string, _ error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	names, err := m.queryPackages(ctx, "packages/solvers/task/")
+	if err != nil {
+		return "", "", nil
+	}
 
 	type result struct {
 		name     string
@@ -221,10 +230,10 @@ func runTaskers(ctx context.Context, cl *storage.Client, taskers []string, block
 
 	ch := make(chan *result)
 
-	for _, name := range taskers {
+	for _, name := range names {
 		name := name
 		go func() {
-			sol, score, err := runTasker(ctx, cl, block, name)
+			sol, score, err := m.runTaskSolver(ctx, name)
 			ch <- &result{name, sol, score, err}
 		}()
 	}
@@ -232,13 +241,13 @@ func runTaskers(ctx context.Context, cl *storage.Client, taskers []string, block
 	var best *result
 	done := 0
 loop:
-	for done < len(taskers) {
+	for done < len(names) {
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				logf("ERROR: Failed to run tasker %s: %v", r.name, r.err)
+				m.logf("ERROR: Failed to run the task solver %s: %v", r.name, r.err)
 			} else {
-				logf("Tasker %s passed with score %d: %s", r.name, r.score, r.solution)
+				m.logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -250,12 +259,12 @@ loop:
 	}
 
 	if best == nil {
-		return "", errors.New("no tasker passed")
+		return "", "", errors.New("no task solver passed")
 	}
-	return best.solution, nil
+	return best.name, best.solution, nil
 }
 
-func runTasker(ctx context.Context, cl *storage.Client, block int, name string) (string, int, error) {
+func (m *miner) runTaskSolver(ctx context.Context, name string) (string, int, error) {
 	t := &task{
 		Cmd: `set -e
 ls -l
@@ -264,36 +273,36 @@ curl -s -d "task=$(cat task.desc)" -d "solution=$(cat $OUT_DIR/out.txt)" https:/
 grep -q Success $OUT_DIR/validation.txt
 `,
 		Pkgs: []*pkg{
-			{URL: fmt.Sprintf("gs://%s/blocks/%d/block.tar.gz", bucket, block)},
-			{URL: fmt.Sprintf("gs://%s/packages/taskers/%s.tar.gz", bucket, name)},
+			{URL: fmt.Sprintf("gs://%s/blocks/%d/block.tar.gz", bucket, m.args.block)},
+			{URL: fmt.Sprintf("gs://%s/packages/solvers/task/%s.tar.gz", bucket, name)},
 		},
-		Out: fmt.Sprintf("gs://%s/results/%d/taskers/%s/", bucket, block, name),
+		Out: fmt.Sprintf("gs://%s/results/%d/solvers/task/%s/", bucket, m.args.block, name),
 	}
-	logf("Running tasker %s", name)
-	if err := runTask(ctx, t); err != nil {
+	m.logf("Running the task solver %s", name)
+	if err := m.runTask(ctx, t); err != nil {
 		return "", 0, err
 	}
-	b, err := readGCSFile(ctx, cl, fmt.Sprintf("results/%d/taskers/%s/out.txt", block, name))
+	b, err := m.readGCSFile(ctx, fmt.Sprintf("results/%d/solvers/task/%s/out.txt", m.args.block, name))
 	if err != nil {
 		return "", 0, err
 	}
 	sol := strings.TrimSpace(string(b))
-	b, err = readGCSFile(ctx, cl, fmt.Sprintf("results/%d/taskers/%s/validation.txt", block, name))
+	b, err = m.readGCSFile(ctx, fmt.Sprintf("results/%d/solvers/task/%s/validation.txt", m.args.block, name))
 	if err != nil {
 		return "", 0, err
 	}
-	m := regexp.MustCompile(`Your solution took (\d+) time units`).FindStringSubmatch(string(b))
-	if m == nil {
+	ms := regexp.MustCompile(`Your solution took (\d+) time units`).FindStringSubmatch(string(b))
+	if ms == nil {
 		return "", 0, errors.New("validator output does not contain steps")
 	}
-	score, err := strconv.Atoi(m[1])
+	score, err := strconv.Atoi(ms[1])
 	if err != nil {
 		return "", 0, err
 	}
 	return sol, score, nil
 }
 
-func runTask(ctx context.Context, t *task) error {
+func (m *miner) runTask(ctx context.Context, t *task) error {
 	body, err := json.Marshal(t)
 	if err != nil {
 		return err
@@ -303,7 +312,7 @@ func runTask(ctx context.Context, t *task) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("X-API-Key", m.args.apiKey)
 	res, err := http.DefaultClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
@@ -328,8 +337,8 @@ func runTask(ctx context.Context, t *task) error {
 	return nil
 }
 
-func readGCSFile(ctx context.Context, cl *storage.Client, path string) ([]byte, error) {
-	r, err := cl.Bucket(bucket).Object(path).NewReader(ctx)
+func (m *miner) readGCSFile(ctx context.Context, path string) ([]byte, error) {
+	r, err := m.cl.Bucket(bucket).Object(path).NewReader(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -337,29 +346,25 @@ func readGCSFile(ctx context.Context, cl *storage.Client, path string) ([]byte, 
 	return ioutil.ReadAll(r)
 }
 
-func submit(ctx context.Context, block int, puzzle, task string) error {
-	blockDir := filepath.Join("blocks", strconv.Itoa(block))
+func (m *miner) submit(ctx context.Context, puzzle, task string) error {
+	blockDir := filepath.Join("blocks", strconv.Itoa(m.args.block))
 	if err := ioutil.WriteFile(filepath.Join(blockDir, "submit.desc"), []byte(puzzle), 0666); err != nil {
 		return err
 	}
 	if err := ioutil.WriteFile(filepath.Join(blockDir, "submit.sol"), []byte(task), 0666); err != nil {
 		return err
 	}
-	f, err := os.Create(filepath.Join(blockDir, "submit.log"))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+
 	cmd := exec.CommandContext(ctx,
 		"python3.6",
 		"./lambda-cli.py",
 		"submit",
-		strconv.Itoa(block),
+		strconv.Itoa(m.args.block),
 		filepath.Join(blockDir, "submit.sol"),
 		filepath.Join(blockDir, "submit.desc"))
-	cmd.Stdout = f
-	cmd.Stderr = f
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	m.log(string(out))
+	return err
 }
 
 type task struct {
@@ -373,22 +378,28 @@ type pkg struct {
 	Dest string `json:"dest,omitempty"`
 }
 
-func log(args ...interface{}) {
+func (m *miner) log(args ...interface{}) {
 	msg := fmt.Sprint(args...)
-	go postToSlack(msg)
+	fmt.Fprintln(os.Stderr, msg)
+	go m.postToSlack(msg)
 }
 
-func logf(format string, args ...interface{}) {
+func (m *miner) logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	go postToSlack(msg)
+	fmt.Fprintln(os.Stderr, msg)
+	go m.postToSlack(msg)
 }
 
-func postToSlack(text string) error {
+func (m *miner) postToSlack(text string) error {
+	if m.args.slackWebhookURL == "" {
+		return nil
+	}
+
 	req := map[string]string{"text": text}
 	data, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
-	_, err = http.Post(slackURL, "application/json", bytes.NewReader(data))
+	_, err = http.Post(m.args.slackWebhookURL, "application/json", bytes.NewReader(data))
 	return err
 }
