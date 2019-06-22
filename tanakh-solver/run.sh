@@ -5,7 +5,7 @@ cargo build --release
 rm -rf tmp
 mkdir tmp
 
-for i in $(seq 1 220); do
+for i in $(seq 220 300); do
     input=$(printf "data/prob-%03d.desc" $i)
     printf "Solving $input ...\n"
     target/release/tanakh-solver solve $input
