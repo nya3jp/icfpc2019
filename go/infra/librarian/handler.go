@@ -127,6 +127,7 @@ VALUES (?, ?, ?, ?, ?)
 	if err != nil {
 		return 0, 0, err
 	}
+	id = int(id64)
 
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -147,5 +148,5 @@ VALUES (?, ?, ?, ?, ?)
 		return 0, 0, err
 	}
 
-	return int(id64), lastBestScore, nil
+	return id, lastBestScore, nil
 }
