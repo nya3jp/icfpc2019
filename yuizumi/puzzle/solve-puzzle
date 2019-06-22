@@ -13,7 +13,15 @@ def _create_polygon(grid, tSize):
             return grid[y][x]
         return '#'
 
-    (x0, y0) = (0, 0)
+    for y in range(tSize):
+        found = False
+        for x in range(tSize):
+            if grid[y][x] != '#':
+                found = True
+                (x0, y0) = (x, y)
+                break
+        if found:
+            break
 
     (x, y) = (x0, y0)
     yield (x, y)
@@ -63,6 +71,11 @@ def main():
 
     grid = [([' '] * tSize) for _ in range(tSize)]
 
+    def cell(x, y):
+        if (x >= 0) and (x < tSize) and (y >= 0) and (y < tSize):
+            return grid[y][x]
+        return '#'
+
     for y in range(tSize):
         for x in range(tSize):
             if (x, y) in iSqs: grid[y][x] = '.'
@@ -80,6 +93,10 @@ def main():
                 if grid[y][x] == '.':
                     okay = False
                     break
+                if any(cell(x + dx, y + dy) == '#' for dx in [-1, 1] for dy in [-1, 1]):
+                    if not any(cell(x + dx, y + dy) == '#' for dx, dy in _DIRS):
+                        okay = False
+                        break
                 x, y = x + dx, y + dy
             if not okay:
                 continue
@@ -99,11 +116,6 @@ def main():
                 x, y = x + dx, y + dy
 
     v = len(list(_create_polygon(grid, tSize)))
-
-    def cell(x, y):
-        if (x >= 0) and (x < tSize) and (y >= 0) and (y < tSize):
-            return grid[y][x]
-        return '#'
 
     for y in range(tSize):
         for x in range(tSize):

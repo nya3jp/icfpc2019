@@ -29,6 +29,7 @@ var apiKey string
 type args struct {
 	block  int
 	apiKey string
+	submit bool
 }
 
 func parseArgs() (*args, error) {
@@ -36,6 +37,7 @@ func parseArgs() (*args, error) {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.IntVar(&args.block, "block", -1, "block number")
 	fs.StringVar(&args.apiKey, "apikey", "", "exec API key")
+	fs.BoolVar(&args.submit, "submit", true, "submit")
 	return &args, fs.Parse(os.Args[1:])
 }
 
@@ -63,13 +65,13 @@ func main() {
 			return err
 		}
 
-		return doMain(ctx, cl, args.block)
+		return doMain(ctx, cl, args.block, args.submit)
 	}(); err != nil {
 		panic(fmt.Sprint("ERROR: ", err))
 	}
 }
 
-func doMain(ctx context.Context, cl *storage.Client, block int) error {
+func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) error {
 	puzzlers, err := queryPackages(ctx, cl, "packages/puzzlers/")
 	if err != nil {
 		return err
@@ -103,6 +105,11 @@ func doMain(ctx context.Context, cl *storage.Client, block int) error {
 
 	puzzle := <-puzzleCh
 	task := <-taskCh
+
+	fmt.Fprintf(os.Stderr, "Submitting:\nPuzzle=%s\nTask=%s\n", puzzle, task)
+	if !toSubmit {
+		return nil
+	}
 
 	return submit(ctx, block, puzzle, task)
 }
@@ -150,6 +157,7 @@ func runPuzzlers(ctx context.Context, cl *storage.Client, puzzlers []string, blo
 		select {
 		case r := <-ch:
 			if r.err == nil {
+				fmt.Fprintf(os.Stderr, "Puzzler %s passed\n", r.name)
 				return r.solution, nil
 			}
 			fmt.Fprintf(os.Stderr, "ERROR: Failed to run puzzler %s: %v\n", r.name, r.err)
@@ -165,7 +173,7 @@ func runPuzzler(ctx context.Context, cl *storage.Client, block int, name string)
 	t := &task{
 		Cmd: `set -e
 ls -l
-./solve-puzzle < puzzle.cond > $OUT_DIR/out.txt
+./solve-puzzle < puzzle.cond > $OUT_DIR/out.txt 2> /dev/null
 curl -s -d "task=$(cat puzzle.cond)" -d "solution=$(cat $OUT_DIR/out.txt)" https://us-central1-sound-type-system.cloudfunctions.net/checkpuzzle > $OUT_DIR/validation.txt
 grep -q Success $OUT_DIR/validation.txt
 `,
@@ -216,6 +224,7 @@ loop:
 			if r.err != nil {
 				fmt.Fprintf(os.Stderr, "ERROR: Failed to run tasker %s: %v\n", r.name, r.err)
 			} else {
+				fmt.Fprintf(os.Stderr, "Tasker %s passed with score %d\n", r.name, r.score)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -236,7 +245,7 @@ func runTasker(ctx context.Context, cl *storage.Client, block int, name string) 
 	t := &task{
 		Cmd: `set -e
 ls -l
-./solve-task < task.desc > $OUT_DIR/out.txt
+./solve-task < task.desc > $OUT_DIR/out.txt 2> /dev/null
 curl -s -d "task=$(cat task.desc)" -d "solution=$(cat $OUT_DIR/out.txt)" https://us-central1-sound-type-system.cloudfunctions.net/checktask > $OUT_DIR/validation.txt
 grep -q Success $OUT_DIR/validation.txt
 `,
