@@ -8,14 +8,14 @@ let map = Array.from(new Array(MAX_X), () => new Array(MAX_Y).fill(0));
 let sweep = Array.from(new Array(MAX_X), () => new Array(MAX_Y).fill(0));
 let mapMaxX = 0;
 let mapMaxY = 0;
-let lobot;
+let robot;
 let manipList;
 let flags;
 
 function showinfo(){
   let info = document.getElementById("info");
   info.value = "";
-  info.value += "x:" + String(lobot[0]) + " y:" + String(lobot[1])+"\n";
+  info.value += "x:" + String(robot[0]) + " y:" + String(robot[1])+"\n";
   info.value += "maniplist:" + JSON.stringify(manipList) +"\n";
   info.value += "maniplist:" + JSON.stringify(flags) +"\n";
 }
@@ -80,9 +80,9 @@ function makeMap(){
 
 function setStart(start){
   start = start.split(',');
-  lobot = [0,0];
-  lobot[0] = Number(start[0].replace('(',''));
-  lobot[1] = Number(start[1].replace(')',''));
+  robot = [0,0];
+  robot[0] = Number(start[0].replace('(',''));
+  robot[1] = Number(start[1].replace(')',''));
   manipList = [];
   manipList.push([1,1]);
   manipList.push([1,0]);
@@ -165,10 +165,10 @@ function render(){
   }
 
   ctx.fillStyle = 'rgb(255, 0, 0)';
-  ctx.fillRect(lobot[0]*mapXunit,CANVAS_MAX_Y-lobot[1]*mapYunit-mapYunit, mapXunit, mapYunit );
+  ctx.fillRect(robot[0]*mapXunit,CANVAS_MAX_Y-robot[1]*mapYunit-mapYunit, mapXunit, mapYunit );
   for(i in manipList){
-    if(visible(lobot[0],lobot[1],lobot[0]+manipList[i][0],lobot[1]+manipList[i][1])){
-      ctx.fillRect((lobot[0]+manipList[i][0])*mapXunit,CANVAS_MAX_Y-(lobot[1]+manipList[i][1])*mapYunit-mapYunit, mapXunit, mapYunit );
+    if(visible(robot[0],robot[1],robot[0]+manipList[i][0],robot[1]+manipList[i][1])){
+      ctx.fillRect((robot[0]+manipList[i][0])*mapXunit,CANVAS_MAX_Y-(robot[1]+manipList[i][1])*mapYunit-mapYunit, mapXunit, mapYunit );
     }
   }
 
@@ -226,7 +226,7 @@ function ansStrUpdate(move){
   return;
 }
 
-var lobotDir = {
+var robotDir = {
   "A" : [-1,0],
   "D" : [1,0],
   "S" : [0,-1],
@@ -238,9 +238,9 @@ function updateflags(){
   if(flags["L"] > 0) flags["L"]--;
 }
 
-function movelobot(move){
-  let newX = lobot[0] + lobotDir[move][0];
-  let newY = lobot[1] + lobotDir[move][1];
+function moverobot(move){
+  let newX = robot[0] + robotDir[move][0];
+  let newY = robot[1] + robotDir[move][1];
 
   if((newX < 0) || (mapMaxX < newX)){
     return;
@@ -274,12 +274,12 @@ function movelobot(move){
       break;
     default:
   }
-  lobot[0] = newX;
-  lobot[1] = newY;
-  sweep[lobot[0]][lobot[1]] = 1;
+  robot[0] = newX;
+  robot[1] = newY;
+  sweep[robot[0]][robot[1]] = 1;
   for(i in manipList){
-    if(visible(lobot[0],lobot[1],lobot[0]+manipList[i][0],lobot[1]+manipList[i][1])){
-      sweep[lobot[0]+manipList[i][0]][lobot[1]+manipList[i][1]] = 1;
+    if(visible(robot[0],robot[1],robot[0]+manipList[i][0],robot[1]+manipList[i][1])){
+      sweep[robot[0]+manipList[i][0]][robot[1]+manipList[i][1]] = 1;
     }
   }
 }
@@ -338,33 +338,33 @@ function visible(x1,y1,x2,y2){
 }
 
 function moveA(){
-  movelobot("A");
+  moverobot("A");
   if(flags["F"] > 0){
-    movelobot("A");
+    moverobot("A");
   }
   return;
 }
 
 function moveD(){
-  movelobot("D");
+  moverobot("D");
   if(flags["F"] > 0){
-    movelobot("D");
+    moverobot("D");
   }
   return;
 }
 
 function moveS(){
-  movelobot("S");
+  moverobot("S");
   if(flags["F"] > 0){
-    movelobot("S");
+    moverobot("S");
   }
   return;
 }
 
 function moveW(){
-  movelobot("W");
+  moverobot("W");
   if(flags["F"] > 0){
-    movelobot("W");
+    moverobot("W");
   }
   return;
 }
@@ -373,12 +373,22 @@ function moveE(){
   for(i in manipList){
     manipList[i] = [manipList[i][1],-manipList[i][0]];
   }
+  for(i in manipList){
+    if(visible(robot[0],robot[1],robot[0]+manipList[i][0],robot[1]+manipList[i][1])){
+      sweep[robot[0]+manipList[i][0]][robot[1]+manipList[i][1]] = 1;
+    }
+  }
   return;
 }
 
 function moveQ(){
   for(i in manipList){
     manipList[i] = [-manipList[i][1],manipList[i][0]];
+  }
+  for(i in manipList){
+    if(visible(robot[0],robot[1],robot[0]+manipList[i][0],robot[1]+manipList[i][1])){
+      sweep[robot[0]+manipList[i][0]][robot[1]+manipList[i][1]] = 1;
+    }
   }
   return;
 }
@@ -412,14 +422,10 @@ function moveL(){
 
 function moveR(){
   if(flags["Rcount"] === 0) return;
-  flags["R"].push([lobot[0],lobot[1]]);
-  map[lobot[0]][lobot[1]] = 8;
+  flags["R"].push([robot[0],robot[1]]);
+  map[robot[0]][robot[1]] = 8;
   flags["Rcount"]--;
   return;
-}
-
-function moveBS(){
-
 }
 
 function moveT(){
@@ -429,8 +435,8 @@ function moveT(){
   str[1] = Number(str[1].replace(')',''));
   for(i in flags["R"]){
     if((str[0]===flags["R"][i][0]) && (str[1]===flags["R"][i][1])){
-      lobot[0] = flags["R"][i][0];
-      lobot[1] = flags["R"][i][1];
+      robot[0] = flags["R"][i][0];
+      robot[1] = flags["R"][i][1];
       return;
     }
   }
@@ -544,7 +550,7 @@ function init(){
     }
   };
 
-  sweep[lobot[0]][lobot[1]] = 1;
+  sweep[robot[0]][robot[1]] = 1;
   document.getElementById("output").value = "";
   ansStr = "";
 
