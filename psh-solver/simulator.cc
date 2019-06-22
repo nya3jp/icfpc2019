@@ -128,7 +128,7 @@ bool IsVisible(const Point& origin, const Point& target,
     }
   } else {
     Point s = origin, g = target;
-    if (s.x < g.x) {
+    if (s.x > g.x) {
       std::swap(s, g);
     }
 
@@ -150,8 +150,11 @@ bool IsVisible(const Point& origin, const Point& target,
   }
 
   for (const auto& p : points) {
-    if (m[p.y * width + p.x] == Cell::WALL)
+    if (p.y < 0 || static_cast<int>(height) <= p.y ||
+        p.x < 0 || static_cast<int>(width) <= p.x ||
+        m[p.y * width + p.x] == Cell::WALL) {
       return false;
+    }
   }
   return true;
 }
@@ -275,6 +278,70 @@ void Map::Run(int index, const Instruction& inst) {
     case Instruction::Type::C:
       LOG(FATAL) << "Unknown/Unsupported Instruction Type: " << inst;
   }
+}
+
+std::string Map::ToString() const {
+  std::string result;
+  for (int y = static_cast<int>(height_) - 1; y >= 0; --y) {
+    for (int x = 0; x < static_cast<int>(width_); ++x) {
+      switch ((*this)[Point{x, y}]) {
+        case Cell::WALL:
+          result.push_back('#');
+          break;
+        case Cell::EMPTY:
+          result.push_back(' ');
+          break;
+        case Cell::FILLED:
+          result.push_back('.');
+          break;
+      }
+    }
+    result.push_back('\n');
+  }
+
+  // Overwrite booster.
+  for (const auto& kv : booster_map_) {
+    const auto& p = kv.first;
+    int index = (height_ - p.y - 1) * (width_ + 1) + p.x;
+    switch (kv.second) {
+      case Booster::B:
+        result[index] = result[index] == '.' ? 'B' : 'b';
+        break;
+      case Booster::F:
+        result[index] = result[index] == '.' ? 'F' : 'f';
+        break;
+      case Booster::L:
+        result[index] = result[index] == '.' ? 'L' : 'l';
+        break;
+      case Booster::X:
+        result[index] = result[index] == '.' ? 'X' : 'x';
+        break;
+      case Booster::R:
+        result[index] = result[index] == '.' ? 'R' : 'r';
+        break;
+      case Booster::C:
+        result[index] = result[index] == '.' ? 'C' : 'c';
+        break;
+    }
+  }
+
+  // Wrapper.
+  for (const auto& wrapper : wrappers_) {
+    {
+      const auto& p = wrapper.point();
+      int index = (height_ - p.y - 1) * (width_ + 1) + p.x;
+      result[index] = '%';
+    }
+    for (const auto& manip : wrapper.manipulators()) {
+      const auto& p = wrapper.point() + manip;
+      int index = (height_ - p.y - 1) * (width_ + 1) + p.x;
+      if (result[index] == ' ' || result[index] == '.') {
+        result[index] = '&';
+      }
+    }
+  }
+
+  return result;
 }
 
 void Map::Move(Wrapper* wrapper, const Point& direction) {

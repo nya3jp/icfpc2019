@@ -10,7 +10,7 @@ use std::mem::swap;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-const ISLAND_SIZE_THRESHOLD: usize = 50;
+// const ISLAND_SIZE_THRESHOLD: usize = 50;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
@@ -36,7 +36,8 @@ enum Opt {
 
 type Pos = (i64, i64);
 
-const VECT: &[Pos] = &[(1, 0), (-1, 0), (0, 1), (0, -1)];
+// const VECT: &[Pos] = &[(-1, 0), (1, 0), (0, 1), (0, -1)];
+const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
@@ -289,76 +290,117 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i64)> {
-    let h = bd.len() as i64;
-    let w = bd[0].len() as i64;
+fn nearest(state: &State) -> Option<(i64, i64)> {
+    let h = state.bd.len() as i64;
+    let w = state.bd[0].len() as i64;
+    let has_prios = state.prios > 0;
 
-    let mut q = VecDeque::new();
-    q.push_back((x, y));
+    /*
+        let mut q = VecDeque::new();
+        q.push_back((x, y));
 
-    let mut found = None;
-    let mut prev = BTreeMap::<Pos, Pos>::new();
+        let mut found = None;
+        let mut prev = BTreeMap::<Pos, Pos>::new();
 
-    while let Some((cx, cy)) = q.pop_front() {
-        for &(dx, dy) in VECT.iter() {
-            let nx = cx + dx;
-            let ny = cy + dy;
+        while let Some((cx, cy)) = q.pop_front() {
+            for &(dx, dy) in VECT.iter() {
+                let nx = cx + dx;
+                let ny = cy + dy;
 
-            if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                continue;
-            }
-
-            if bd[ny as usize][nx as usize] & 1 != 0 {
-                continue;
-            }
-
-            if prev.contains_key(&(nx, ny)) {
-                continue;
-            }
-
-            prev.insert((nx, ny), (cx, cy));
-            q.push_back((nx, ny));
-
-            if bd[ny as usize][nx as usize] & 2 == 0
-                && if has_prios {
-                    bd[ny as usize][nx as usize] & 4 != 0
-                } else {
-                    true
+                if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                    continue;
                 }
-            {
-                found = Some((nx, ny));
-                // dbg!((&found, bd[ny as usize][nx as usize]));
+
+                if bd[ny as usize][nx as usize] & 1 != 0 {
+                    continue;
+                }
+
+                if prev.contains_key(&(nx, ny)) {
+                    continue;
+                }
+
+                prev.insert((nx, ny), (cx, cy));
+                q.push_back((nx, ny));
+
+                if bd[ny as usize][nx as usize] & 2 == 0
+                    && if has_prios {
+                        bd[ny as usize][nx as usize] & 4 != 0
+                    } else {
+                        true
+                    }
+                {
+                    found = Some((nx, ny));
+                    // dbg!((&found, bd[ny as usize][nx as usize]));
+                    break;
+                }
+            }
+            if found.is_some() {
                 break;
             }
         }
-        if found.is_some() {
-            break;
+
+        if found.is_none() {
+            return None;
+        }
+
+
+        let (mut tx, mut ty) = found.unwrap();
+
+        // let mut route_len = 0;
+
+        loop {
+            // route_len += 1;
+            let n = prev[&(tx, ty)];
+            if n == (x, y) {
+                // dbg!((route_len, tx, ty, x, y));
+                return Some((tx, ty));
+            }
+            tx = n.0;
+            ty = n.1;
+        }
+    */
+
+    let mut best_score = (0xffffffff, 0xffffffff);
+    let mut ret = None;
+
+    for (dx, dy) in VECT.iter() {
+        let cx = state.x + dx;
+        let cy = state.y + dy;
+
+        if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+            continue;
+        }
+
+        if state.bd[cy as usize][cx as usize] & 1 != 0 {
+            continue;
+        }
+
+        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, has_prios) {
+            let sc = state.try_move_to(cx, cy);
+            if (dist, -sc) < best_score {
+                best_score = (dist, -sc);
+                ret = Some((cx, cy));
+            }
         }
     }
 
-    if found.is_none() {
-        return None;
-    }
-
-    let (mut tx, mut ty) = found.unwrap();
-
-    // let mut route_len = 0;
-
-    loop {
-        // route_len += 1;
-        let n = prev[&(tx, ty)];
-        if n == (x, y) {
-            // dbg!((route_len, tx, ty, x, y));
-            return Some((tx, ty));
-        }
-        tx = n.0;
-        ty = n.1;
-    }
+    ret
 }
 
-fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<usize> {
+fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<usize> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
+
+    if bd[y as usize][x as usize] & 2 == 0
+        && if has_prios {
+            bd[y as usize][x as usize] & 4 != 0
+        } else {
+            true
+        }
+    {
+        return Some(0);
+    }
+
 
     let mut q = VecDeque::new();
     q.push_back((x, y, 0));
@@ -386,7 +428,13 @@ fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<usize> {
             close.insert((nx, ny));
             q.push_back((nx, ny, dep + 1));
 
-            if bd[ny as usize][nx as usize] & 2 == 0 {
+            if bd[ny as usize][nx as usize] & 2 == 0
+                && if has_prios {
+                    bd[ny as usize][nx as usize] & 4 != 0
+                } else {
+                    true
+                }
+            {
                 return Some(dep + 1);
             }
         }
@@ -406,6 +454,7 @@ struct State {
 
     hist: Vec<Diff>,
     diff: Diff,
+    island_size_threshold: i64,
 }
 
 #[derive(Default, Clone)]
@@ -420,7 +469,7 @@ struct Diff {
 }
 
 impl State {
-    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> State {
+    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64, island_size_threshold: i64) -> State {
         let mut ret = State {
             bd: bd.clone(),
             x,
@@ -432,6 +481,7 @@ impl State {
 
             hist: vec![],
             diff: Diff::default(),
+            island_size_threshold: island_size_threshold,
         };
         ret.rest = ret.paint(x, y, true, false, 0, 1 << 30);
         ret.paint(x, y, false, false, 0, 1 << 30);
@@ -558,12 +608,49 @@ impl State {
                 continue;
             }
 
-            let island_size = self.paint(mx, my, true, false, 0, ISLAND_SIZE_THRESHOLD);
-            self.paint(mx, my, false, false, 0, ISLAND_SIZE_THRESHOLD);
-            if island_size < ISLAND_SIZE_THRESHOLD {
-                self.paint(mx, my, true, true, 0, ISLAND_SIZE_THRESHOLD);
+            let island_size =
+                self.paint(mx, my, true, false, 0, self.island_size_threshold as usize);
+            self.paint(mx, my, false, false, 0, self.island_size_threshold as usize);
+            if island_size < self.island_size_threshold as usize {
+                self.paint(mx, my, true, true, 0, self.island_size_threshold as usize);
             }
         }
+    }
+
+    fn try_move_to(&self, x: i64, y: i64) -> i64 {
+        let mut score = 0;
+
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        for &(dx, dy) in self.manips.iter() {
+            let tx = x + dx;
+            let ty = y + dy;
+            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                continue;
+            }
+
+            let mut ok = true;
+            for (px, py) in pass_cells(x, y, tx, ty) {
+                if self.bd[py as usize][px as usize] & 1 != 0 {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok {
+                continue;
+            }
+
+            let prev = self.bd[ty as usize][tx as usize];
+
+            if self.bd[ty as usize][tx as usize] & 2 == 0 {
+                score += 1;
+            }
+        }
+        if self.bd[y as usize][x as usize] >> 4 != 0 {
+            score += 2;
+        }
+        score
     }
 
     fn paint(&mut self, x: i64, y: i64, b: bool, diff: bool, mut acc: usize, th: usize) -> usize {
@@ -626,12 +713,17 @@ impl State {
         if self.rest == 0 {
             0
         } else {
-            nearest_empty_dist(&self.bd, self.x, self.y).unwrap()
+            nearest_empty_dist(&self.bd, self.x, self.y, false).unwrap()
         }
     }
 
     fn score(&mut self) -> f64 {
         self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist() as f64 * 0.01
+    }
+
+    fn dump(&self) {
+        eprintln!("{}, {}", self.x, self.y);
+        print_bd(&self.bd);
     }
 }
 
@@ -692,15 +784,49 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
-fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let h = bd.len() as i64;
-    let w = bd[0].len() as i64;
+fn solve(
+    bd_org: &Vec<Vec<u8>>,
+    sx: i64,
+    sy: i64,
+    island_size_threshold: i64,
+    aggressive_item: bool,
+) -> Vec<Command> {
+    let h = bd_org.len() as i64;
+    let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd, sx, sy);
+    let mut state = State::new(bd_org, sx, sy, island_size_threshold);
     let mut ret = vec![];
+    state.move_to(sx, sy);
 
     loop {
-        let n = nearest(&state.bd, state.x, state.y, state.prios > 0);
+        if aggressive_item {
+            let mut done = false;
+            // 隣にアイテムがあったら拾う
+            for &(dx, dy) in VECT.iter() {
+                let cx = dx + state.x;
+                let cy = dy + state.y;
+                if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+                    continue;
+                }
+                let item = state.bd[cy as usize][cx as usize] >> 4;
+                // 使える奴だけ
+                if item == 1 {
+                    // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
+                    // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
+                    state.move_to(cx, cy);
+                    ret.push(Command::Move(dx, dy));
+                    // eprintln!("{}", state.bd[cy as usize][cx as usize]);
+                    done = true;
+                    break;
+                }
+            }
+            if done {
+                // state.dump();
+                continue;
+            }
+        }
+
+        let n = nearest(&state);
         if n.is_none() {
             break;
         }
@@ -720,17 +846,43 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
             }
         }
 
-        ret.push(Command::Move(nx - state.x, ny - state.y));
+        let dx = nx - state.x;
+        let dy = ny - state.y;
+
+        // dbg!((dx, dy, &state.manips));
+
+        // 移動する方向にモップを回す
+        // let mut rot_cnt = 0;
+        // while !state.manips.contains(&(dx, dy)) {
+        //     state.rotate(true);
+        //     rot_cnt += 1;
+        // }
+
+        // if rot_cnt == 0 {
+        // } else if rot_cnt == 1 {
+        //     ret.push(Command::Turn(true));
+        // } else if rot_cnt == 2 {
+        //     ret.push(Command::Turn(true));
+        //     ret.push(Command::Turn(true));
+        // } else {
+        //     ret.push(Command::Turn(false));
+        // }
+
+        // dbg!((rot_cnt, &state.manips));
+
+        // 移動
+        ret.push(Command::Move(dx, dy));
         state.move_to(nx, ny);
 
         // print_bd(&state.bd);
+        // eprintln!("{}", &encode_commands(&ret));
     }
 
     ret
 }
 
 fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let mut state = State::new(bd, sx, sy);
+    let mut state = State::new(bd, sx, sy, 50);
     let mut ret = vec![];
 
     let cand = vec![
@@ -746,6 +898,7 @@ fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
         let (_, cmd) = rec(&mut state, &cand, 10);
         state.apply(&cmd);
         ret.push(cmd);
+        print_bd(&state.bd);
     }
 
     ret
@@ -776,15 +929,26 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
-    let ans = solve(&mut bd, input.init_pos.0, input.init_pos.1);
-    // print_ans(&ans);
+
+    let mut ans = vec![];
+
+    for i in 0..20 {
+        let th = 5 + 5 * i;
+        for j in 0..2 {
+            let cur = solve(&mut bd, input.init_pos.0, input.init_pos.1, th, j != 0);
+            eprintln!("{} {}: {}", i, j, cur.len());
+            if ans.len() == 0 || ans.len() > cur.len() {
+                ans = cur;
+            }
+        }
+    }
 
     let score = ans.len() as i64;
     // eprintln!("Score: {}", score);
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!(
+    eprintln!(
         "Score for {}: score = {}, best_score = {}",
         name,
         score,
@@ -793,8 +957,11 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     if show_solution {
         println!("{}", encode_commands(&ans));
+    } else {
+        save_solution(LIGHTNING_DIR, name, &ans, score)?;
     }
-    save_solution(LIGHTNING_DIR, name, &ans, score)
+
+    Ok(())
 }
 
 //---------
@@ -852,7 +1019,7 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
     let best = get_best_score(root, name)?.unwrap_or(0);
     if best == 0 || best > score {
-        println!("* Best score for {}: {} -> {}", name, best, score);
+        eprintln!("* Best score for {}: {} -> {}", name, best, score);
         let pb = get_result_dir(root, name)?;
         fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
     }
