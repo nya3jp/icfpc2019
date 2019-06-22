@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,11 +53,13 @@ type submitRequest struct {
 	Solver   string `json:"solver"`
 	Problem  string `json:"problem"`
 	Solution string `json:"solution"`
-	Score    int32  `json:"score"`
+	Score    int    `json:"score"`
 }
 
 type submitResponse struct {
-	ID int `json:"id"`
+	ID            int `json:"id"`
+	Score         int `json:"score"`
+	LastBestScore int `json:"lastBestScore"`
 }
 
 func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
@@ -81,36 +85,47 @@ func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			return errors.New("score must not be empty")
 		}
 
-		id, err := h.submit(ctx, &s)
+		id, lastBestScore, err := h.submit(ctx, &s)
 		if err != nil {
 			return err
 		}
 
 		res := &submitResponse{
-			ID: id,
+			ID:            id,
+			Score:         s.Score,
+			LastBestScore: lastBestScore,
 		}
 		return json.NewEncoder(w).Encode(res)
 	})
 }
 
-func (h *handler) submit(ctx context.Context, s *submitRequest) (int, error) {
+func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestScore int, _ error) {
 	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelDefault})
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer tx.Rollback()
 
-	r, err := tx.ExecContext(ctx, `INSERT INTO solutions
-(solver, problem, evaluator, score)
-VALUES (?, ?, ?, ?)
-`, s.Solver, s.Problem, "none", s.Score)
-	if err != nil {
-		return 0, err
+	hbin := sha256.Sum256([]byte(s.Solution))
+	hash := hex.EncodeToString(hbin[:])
+
+	row := tx.QueryRowContext(ctx, `
+SELECT MIN(score) FROM solutions WHERE valid AND problem = ?`, s.Problem)
+	if err := row.Scan(&lastBestScore); err != nil && err != sql.ErrNoRows {
+		return 0, 0, err
 	}
 
-	id, err := r.LastInsertId()
+	r, err := tx.ExecContext(ctx, `INSERT INTO solutions
+(solver, problem, evaluator, solution_hash, score)
+VALUES (?, ?, ?, ?, ?)
+`, s.Solver, s.Problem, "none", hash, s.Score)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
+	}
+
+	id64, err := r.LastInsertId()
+	if err != nil {
+		return 0, 0, err
 	}
 
 	wctx, cancel := context.WithCancel(ctx)
@@ -122,15 +137,15 @@ VALUES (?, ?, ?, ?)
 	if _, err := io.WriteString(w, s.Solution); err != nil {
 		cancel()
 		w.Close()
-		return 0, err
+		return 0, 0, err
 	}
 	if err := w.Close(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
-	return int(id), nil
+	return int(id64), lastBestScore, nil
 }

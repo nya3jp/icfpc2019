@@ -6,12 +6,16 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
 
 
 ROOT_DIR = os.path.dirname(__file__)
 
 API_KEY = 'c868a5215b6bfb6161c6a43363e62d45'
+
+OP_RE = re.compile(r'[WSADZEQFLR]|[BT]\(-?\d+,-?\d+\)')
+PROB_RE = re.compile(r'^prob-\d{3}$')
 
 
 def _parse_args():
@@ -24,9 +28,6 @@ def _parse_args():
 
 class EvalError(Exception):
     pass
-
-
-OP_RE = re.compile(r'[WSADZEQFLR]|[BT]\(-?\d+,-?\d+\)')
 
 
 def _eval_solution(solution: str) -> int:
@@ -44,6 +45,9 @@ def _eval_solution(solution: str) -> int:
 
 def main():
     options = _parse_args()
+
+    if not PROB_RE.search(options.problem):
+        raise Exception('Unknown problem name')
 
     with open(options.solution) as f:
         solution = f.read().strip()
@@ -68,8 +72,26 @@ def main():
         data=json.dumps(data).encode('utf-8'),
         method='POST',
         headers=headers)
-    urllib.request.urlopen(req)
-    
+
+    try:
+        with urllib.request.urlopen(req) as res:
+            result = json.load(res)
+    except urllib.error.HTTPError as e:
+        body = e.fp.read().decode('utf-8')
+        if 'Duplicate entry' in body:
+            print('OK: Duplicated solution found')
+            return
+        sys.exit('SERVER ERROR: %s' % body)
+
+    verified_score = result['score']
+    last_min_score = result['lastMinScore']
+    if last_min_score == 0:
+        print('OK: Congrats! Submitted the first solution for %s with score %d' % (options.problem, verified_score))
+    elif verified_score < last_min_score:
+        print('OK: Congrats! Updated the best score of %s to %d (was: %d)' % (options.problem, verified_score, last_min_score))
+    else:
+        print('OK: Could not update the best score of %s: yours %d, best %d' % (options.problem, verified_score, last_min_score))
+
 
 if __name__ == '__main__':
     sys.exit(main())
