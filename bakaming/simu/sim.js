@@ -243,9 +243,13 @@ function moverobot(move){
   let newY = robot[1] + robotDir[move][1];
 
   if((newX < 0) || (mapMaxX < newX)){
+    ansStr = backspace_str(ansStr);
+    alert("invalid move!");
     return;
   }
   if((newY < 0) || (mapMaxY < newY)){
+    ansStr = backspace_str(ansStr);
+    alert("invalid move!");
     return;
   }
 
@@ -254,6 +258,8 @@ function moverobot(move){
       if(flags["L"] > 0){
         map[newX][newY] = 1;
       } else {
+        ansStr = backspace_str(ansStr);
+        alert("invalid move!");
         return;
       }
     case 3:
