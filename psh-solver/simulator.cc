@@ -208,7 +208,6 @@ std::istream& operator>>(std::istream& is, Point& point) {
   return is;
 }
 
-
 std::ostream& operator<<(std::ostream& os, const Instruction& inst) {
   os << inst.type;
   switch (inst.type) {
@@ -312,16 +311,51 @@ Map::Map(const Desc& desc) {
   map_ = ConvertMap(width_, height_, desc.map_, desc.obstacles);
   booster_map_.insert(desc.boosters.begin(), desc.boosters.end());
   wrappers_.push_back(Wrapper(desc.point));
-  Fill(wrappers_[0]);
+  Fill(wrappers_[0], nullptr);
   remaining_ = std::count(map_.begin(), map_.end(), Cell::EMPTY);
+}
+
+void Map::Undo() {
+  const auto& log = backlogs_.back();
+  auto& wrapper = wrappers_[log.wrapper_index()];
+
+  switch (log.pending_booster()) {
+    case Booster::B:
+      --collected_b_;
+      break;
+    case Booster::F:
+      --collected_f_;
+      break;
+    case Booster::L:
+      --collected_l_;
+      break;
+    case Booster::R:
+      --collected_r_;
+      break;
+    case Booster::C:
+      --collected_c_;
+      break;
+    case Booster::X:
+      // Do nothing.
+      break;
+  }
+  wrapper.set_pending_booster(Booster::X);
+  --num_steps_;
+  backlogs_.pop_back();
 }
 
 void Map::Run(int index, const Instruction& inst) {
   ++num_steps_;
+  BacklogEntry entry;
+  entry.set_wrapper_index(index);
   // TODO record back log.
   CHECK_LT(index, static_cast<int>(wrappers_.size()));
   {
     auto& wrapper = wrappers_[index];
+    entry.set_drill_count(wrapper.drill_count());
+    entry.set_fast_count(wrapper.fast_count());
+
+    entry.set_pending_booster(wrapper.pending_booster());
     switch (wrapper.pending_booster()) {
       case Booster::B:
         ++collected_b_;
@@ -346,47 +380,59 @@ void Map::Run(int index, const Instruction& inst) {
 
     switch (inst.type) {
       case Instruction::Type::W:
-        Move(&wrapper, Point{0, 1});
+        Move(&wrapper, Point{0, 1}, &entry,
+             BacklogEntry::Action::W, BacklogEntry::Action::WW);
         break;
       case Instruction::Type::S:
-        Move(&wrapper, Point{0, -1});
+        Move(&wrapper, Point{0, -1}, &entry,
+             BacklogEntry::Action::S, BacklogEntry::Action::SS);
         break;
       case Instruction::Type::A:
-        Move(&wrapper, Point{-1, 0});
+        Move(&wrapper, Point{-1, 0}, &entry,
+             BacklogEntry::Action::A, BacklogEntry::Action::AA);
         break;
       case Instruction::Type::D:
-        Move(&wrapper, Point{1, 0});
+        Move(&wrapper, Point{1, 0}, &entry,
+             BacklogEntry::Action::D, BacklogEntry::Action::DD);
         break;
       case Instruction::Type::Q:
+        entry.set_action(BacklogEntry::Action::Q);
         wrapper.RotateCounterClockwise();
-        Fill(wrapper);
+        Fill(wrapper, &entry);
         break;
       case Instruction::Type::E:
+        entry.set_action(BacklogEntry::Action::E);
         wrapper.RotateClockwise();
-        Fill(wrapper);
+        Fill(wrapper, &entry);
         break;
       case Instruction::Type::Z:
+        entry.set_action(BacklogEntry::Action::Z);
         break;
       case Instruction::Type::B: {
+        entry.set_action(BacklogEntry::Action::B);
         CHECK_GT(collected_b_, 0);
         CHECK(IsPossibleToExtendManipualtor(wrapper, inst.arg));
         wrapper.AddManipulator(inst.arg);
         --collected_b_;
+        Fill(wrapper, &entry);
         break;
       }
       case Instruction::Type::F: {
+        entry.set_action(BacklogEntry::Action::F);
         CHECK_GT(collected_f_, 0);
         wrapper.set_fast_count(51); // Including this turn.
         --collected_f_;
         break;
       }
       case Instruction::Type::L: {
+        entry.set_action(BacklogEntry::Action::L);
         CHECK_GT(collected_l_, 0);
         wrapper.set_drill_count(31);  // Including this turn.
         --collected_l_;
         break;
       }
       case Instruction::Type::R: {
+        entry.set_action(BacklogEntry::Action::R);
         // Note: the reset position created by Wrapper-i will be immediately
         // appeared to the Wrapper-j where i < j.
         CHECK_GT(collected_r_, 0);
@@ -398,12 +444,14 @@ void Map::Run(int index, const Instruction& inst) {
         break;
       }
       case Instruction::Type::T: {
+        entry.set_action(BacklogEntry::Action::T);
         CHECK(resets_.find(inst.arg) != resets_.end());
         wrapper.set_point(inst.arg);
-        Fill(wrapper);
+        Fill(wrapper, &entry);
         break;
       }
       case Instruction::Type::C: {
+        entry.set_action(BacklogEntry::Action::C);
         CHECK_GT(collected_c_, 0);
         const auto& p = wrapper.point();
         auto iter = booster_map_.find(p);
@@ -492,14 +540,20 @@ std::string Map::ToString() const {
   return result;
 }
 
-void Map::Move(Wrapper* wrapper, const Point& direction) {
-  CHECK(MoveInternal(wrapper, direction));
+void Map::Move(Wrapper* wrapper, const Point& direction,
+               BacklogEntry* entry,
+               BacklogEntry::Action a, BacklogEntry::Action aa) {
+  CHECK(MoveInternal(wrapper, direction, entry, true));
+  entry->set_action(a);
   if (wrapper->fast_count()) {
-    MoveInternal(wrapper, direction);
+    if (MoveInternal(wrapper, direction, entry, false)) {
+      entry->set_action(aa);
+    }
   }
 }
 
-bool Map::MoveInternal(Wrapper* wrapper, const Point& direction) {
+bool Map::MoveInternal(Wrapper* wrapper, const Point& direction,
+                       BacklogEntry* entry, bool is_first) {
   auto p = wrapper->point();
   p += direction;
   if (p.x < 0 || static_cast<int>(width_) <= p.x) {
@@ -514,25 +568,30 @@ bool Map::MoveInternal(Wrapper* wrapper, const Point& direction) {
     }
   }
   wrapper->set_point(p);
-  Fill(*wrapper);
+  Fill(*wrapper, entry);
 
-  // TODO collecting algorithm.
   auto iter = booster_map_.find(p);
   if (iter != booster_map_.end()) {
     if (iter->second != Booster::X) {
       booster_map_.erase(p);
       wrapper->set_pending_booster(iter->second);
+      if (is_first) {
+        entry->set_first_booster(iter->second);
+      } else {
+        entry->set_second_booster(iter->second);
+      }
     }
   }
   return true;
 }
 
-void Map::Fill(const Wrapper& wrapper) {
+void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
   {
     auto& cell = GetCell(wrapper.point());
     if (cell == Cell::EMPTY) {
       --remaining_;
     }
+    entry->add_updated_cell(wrapper.point(), cell);
     cell = Cell::FILLED;
   }
   for (const auto& manip : wrapper.manipulators()) {
@@ -542,6 +601,7 @@ void Map::Fill(const Wrapper& wrapper) {
     }
     auto& cell = GetCell(p);
     if (cell != Cell::FILLED) {
+      entry->add_updated_cell(p, cell);
       cell = Cell::FILLED;
       --remaining_;
     }
