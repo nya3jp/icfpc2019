@@ -159,6 +159,33 @@ bool IsVisible(const Point& origin, const Point& target,
   return true;
 }
 
+bool IsPossibleToExtendManipualtor(
+    const Wrapper& wrapper, const Point& p) {
+  constexpr Point kDirs[] = {
+    {0, 1}, {0, -1}, {1, 0}, {-1, 0},
+  };
+  // TODO check.
+  if (p == Point{0, 0}) {
+    return false;
+  }
+  for (const auto& manip : wrapper.manipulators()) {
+    if (p == manip) {
+      return false;
+    }
+  }
+
+  for (const auto& dir : kDirs) {
+    const auto cand = p + dir;
+    if (cand == Point{0, 0})
+      return true;
+    for (const auto& manip : wrapper.manipulators()) {
+      if (cand == manip)
+        return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 std::ostream& operator<<(std::ostream& os, const Point& point) {
@@ -290,6 +317,7 @@ Map::Map(const Desc& desc) {
 }
 
 void Map::Run(int index, const Instruction& inst) {
+  ++num_steps_;
   // TODO record back log.
   CHECK_LT(index, static_cast<int>(wrappers_.size()));
   auto& wrapper = wrappers_[index];
@@ -316,13 +344,43 @@ void Map::Run(int index, const Instruction& inst) {
       break;
     case Instruction::Type::Z:
       break;
-    case Instruction::Type::B:  // With arg.
-    case Instruction::Type::F:
-    case Instruction::Type::L:
+    case Instruction::Type::B: {
+      CHECK_GT(collected_b_, 0);
+      CHECK(IsPossibleToExtendManipualtor(wrapper, inst.arg));
+      wrapper.AddManipulator(inst.arg);
+      --collected_b_;
+      break;
+    }
+    case Instruction::Type::F: {
+      CHECK_GT(collected_f_, 0);
+      wrapper.set_fast_count(51); // Including this turn.
+      --collected_f_;
+      break;
+    }
+    case Instruction::Type::L: {
+      CHECK_GT(collected_l_, 0);
+      wrapper.set_drill_count(31);  // Including this turn.
+      --collected_l_;
+      break;
+    }
     case Instruction::Type::R:
     case Instruction::Type::T:  // With arg.
     case Instruction::Type::C:
       LOG(FATAL) << "Unknown/Unsupported Instruction Type: " << inst;
+  }
+
+  // Consume counter.
+  {
+    int fast_count = wrapper.fast_count();
+    if (fast_count > 0) {
+      wrapper.set_fast_count(fast_count - 1);
+    }
+  }
+  {
+    int drill_count = wrapper.drill_count();
+    if (drill_count > 0) {
+      wrapper.set_drill_count(drill_count - 1);
+    }
   }
 }
 
@@ -391,24 +449,66 @@ std::string Map::ToString() const {
 }
 
 void Map::Move(Wrapper* wrapper, const Point& direction) {
+  CHECK(MoveInternal(wrapper, direction));
+  if (wrapper->fast_count()) {
+    MoveInternal(wrapper, direction);
+  }
+}
+
+bool Map::MoveInternal(Wrapper* wrapper, const Point& direction) {
   auto p = wrapper->point();
   p += direction;
-  CHECK(0 <= p.x && p.x < static_cast<int>(width_)) << p.x;
-  CHECK(0 <= p.y && p.y < static_cast<int>(height_)) << p.y;
-  CHECK((*this)[p] != Cell::WALL);  // TODO drill.
+  if (p.x < 0 || static_cast<int>(width_) <= p.x) {
+    return false;
+  }
+  if (p.y < 0 && static_cast<int>(height_) <= p.y) {
+    return false;
+  }
+  if (wrapper->drill_count() == 0) {
+    if ((*this)[p] == Cell::WALL) {
+      return false;
+    }
+  }
   wrapper->set_point(p);
   Fill(*wrapper);
-  // TODO booster collect.
+
+  auto iter = booster_map_.find(p);
+  if (iter != booster_map_.end()) {
+    switch (iter->second) {
+      case Booster::B:
+        ++collected_b_;
+        break;
+      case Booster::F:
+        ++collected_f_;
+        break;
+      case Booster::L:
+        ++collected_l_;
+        break;
+      case Booster::R:
+        ++collected_r_;
+        break;
+      case Booster::C:
+        ++collected_c_;
+        break;
+      case Booster::X:
+        // Do nothing.
+        break;
+    }
+
+    if (iter->second != Booster::X) {
+      booster_map_.erase(p);
+    }
+  }
+  return true;
 }
 
 void Map::Fill(const Wrapper& wrapper) {
   {
-    // TODO drill.
     auto& cell = GetCell(wrapper.point());
-    if (cell != Cell::FILLED) {
-      cell = Cell::FILLED;
+    if (cell == Cell::EMPTY) {
       --remaining_;
     }
+    cell = Cell::FILLED;
   }
   for (const auto& manip : wrapper.manipulators()) {
     const auto p = wrapper.point() + manip;
