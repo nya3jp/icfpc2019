@@ -24,6 +24,7 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	r := httprouter.New()
 	r.Handle("GET", "/dashboard", h.handleIndex)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
+	r.ServeFiles("/static/*filepath", http.Dir("infra/dashboard/static"))
 	return r
 }
 
@@ -98,8 +99,9 @@ func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprout
 var problemTmpl = template.Must(parseTemplate("base.html", "problem.html"))
 
 type problemValues struct {
-	Problem   string
-	Solutions []*solution
+	Problem      string
+	Solutions    []*solution
+	BestSolution *solution
 }
 
 func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -111,9 +113,14 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			return err
 		}
 
+		var bs *solution
+		if len(ss) > 0 {
+			bs = ss[0]
+		}
 		v := &problemValues{
-			Problem:   problem,
-			Solutions: ss,
+			Problem:      problem,
+			Solutions:    ss,
+			BestSolution: bs,
 		}
 		return problemTmpl.Execute(w, v)
 	})
