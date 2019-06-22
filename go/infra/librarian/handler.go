@@ -100,7 +100,7 @@ func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestScore int, _ error) {
-	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelDefault})
+	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return 0, 0, err
 	}
