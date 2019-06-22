@@ -1,0 +1,9 @@
+{
+  "name": "validator",
+  "version": "0.0.1",
+  "dependencies": {
+    "process": "^0.11.10",
+    "puppeteer": "^1.18.0",
+    "tmp": "^0.1.0"
+  }
+}
