@@ -34,5 +34,9 @@ int main(int argc, char* argv[]) {
   std::string desc_content = ReadFile(argv[1]);
   auto desc = icfpc2019::ParseDesc(desc_content);
   auto map = icfpc2019::Map(desc);
+
+  LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
+  map.Run(0, icfpc2019::Instruction{icfpc2019::Instruction::Type::D});
+  LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
   return 0;
 }
