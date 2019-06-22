@@ -343,9 +343,10 @@ func submit(ctx context.Context, block int, puzzle, task string) error {
 	cmd := exec.CommandContext(ctx,
 		"python3.6",
 		"./lambda-cli.py",
+		"submit",
 		strconv.Itoa(block),
-		filepath.Join(blockDir, "submit.desc"),
-		filepath.Join(blockDir, "submit.sol"))
+		filepath.Join(blockDir, "submit.sol"),
+		filepath.Join(blockDir, "submit.desc"))
 	cmd.Stdout = f
 	cmd.Stderr = f
 	return cmd.Run()
