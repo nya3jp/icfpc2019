@@ -19,7 +19,7 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 // bit 0: Wall
 // bit 1: Painted
 // bit 4-7: Booster
-type Board = Vec<Vec<u8>>;
+type Board = Vec<Vec<u16>>;
 
 #[derive(Debug, StructOpt)]
 enum Opt {
@@ -45,26 +45,27 @@ type Pos = (i64, i64);
 
 // const VECT: &[Pos] = &[(-1, 0), (1, 0), (0, 1), (0, -1)];
 const VECTS: &[&[Pos]] = &[
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
     // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
     // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    &[(0, 1), (-1, 0), (0, -1), (1, 0)],
+    &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
 ];
 // const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
@@ -190,7 +191,7 @@ fn normalize(input: &mut Input) -> (i64, i64) {
     (max_x - min_x, max_y - min_y)
 }
 
-fn print_bd(bd: &Vec<Vec<u8>>) {
+fn print_bd(bd: &Board) {
     for y in (0..bd.len()).rev() {
         for x in 0..bd[y].len() {
             let c = if bd[y][x] >> 4 == 1 {
@@ -252,7 +253,7 @@ fn encode_commands(ans: &Solution) -> String {
     ret
 }
 
-fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
+fn build_map(input: &Input, w: i64, h: i64) -> Board {
     let mut bd = vec![vec![1; w as usize]; h as usize];
     for y in 0..h {
         let mut ss = BTreeSet::new();
@@ -330,7 +331,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i64, i64)> {
+fn nearest(state: &State, i: usize, f: impl Fn(u16) -> bool + Copy) -> Option<(i64, i64)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -415,7 +416,8 @@ fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i6
         }
 
         if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, f, VECTS[i]) {
-            let sc = state.try_move_to(cx, cy, i);
+            //let sc = state.try_move_to(cx, cy, i);
+            let sc = 0_i64;
             if (dist, -sc) < best_score {
                 best_score = (dist, -sc);
                 ret = Some((cx, cy));
@@ -427,10 +429,10 @@ fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i6
 }
 
 fn nearest_empty_dist(
-    bd: &Vec<Vec<u8>>,
+    bd: &Board,
     x: i64,
     y: i64,
-    f: impl Fn(u8) -> bool,
+    f: impl Fn(u16) -> bool,
     vect: &[Pos],
 ) -> Option<usize> {
     let h = bd.len() as i64;
@@ -479,14 +481,14 @@ struct RobotState {
     x: i64,
     y: i64,
     manips: Vec<Pos>,
+    prios: usize,
 }
 
 struct State {
-    bd: Vec<Vec<u8>>,
+    bd: Board,
     robots: Vec<RobotState>,
     items: Vec<usize>,
     rest: usize,
-    prios: usize,
     clone_num: usize,
 
     hist: Vec<Diff>,
@@ -496,17 +498,16 @@ struct State {
 
 #[derive(Default, Clone)]
 struct Diff {
-    bd: Vec<(usize, usize, u8)>,
+    bd: Vec<(usize, usize, u16)>,
     x: i64,
     y: i64,
     items: Vec<i64>,
     manips: Vec<Pos>,
     rest: usize,
-    prios: usize,
 }
 
 impl State {
-    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64, island_size_threshold: i64) -> State {
+    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64) -> State {
         let mut clone_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
@@ -522,18 +523,18 @@ impl State {
                 x,
                 y,
                 manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+                prios: 0,
             }],
             items: vec![0; 6 + 1],
             rest: 0,
-            prios: 0,
             clone_num,
 
             hist: vec![],
             diff: Diff::default(),
             island_size_threshold: island_size_threshold,
         };
-        ret.rest = ret.paint(x, y, true, false, 0, 1 << 30);
-        ret.paint(x, y, false, false, 0, 1 << 30);
+        ret.rest = ret.paint(x, y, 0, true, false, 0, 1 << 30);
+        ret.paint(x, y, 0, false, false, 0, 1 << 30);
         // ret.diff = ret.create_diff();
         ret
     }
@@ -543,6 +544,7 @@ impl State {
             x,
             y,
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+            prios: 0,
         });
     }
 
@@ -610,7 +612,7 @@ impl State {
 
         let mut mark_around = BTreeSet::new();
 
-        for &(dx, dy) in self.robots[i].manips.iter() {
+        for (dx, dy) in self.robots[i].manips.clone() {
             let tx = x + dx;
             let ty = y + dy;
             if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
@@ -635,9 +637,11 @@ impl State {
             }
             self.bd[ty as usize][tx as usize] |= 2;
 
-            if self.bd[ty as usize][tx as usize] & 4 != 0 {
-                self.bd[ty as usize][tx as usize] &= !4;
-                self.prios -= 1;
+            let prio = self.bd[ty as usize][tx as usize] >> 8;
+
+            if prio != 0 {
+                self.bd[ty as usize][tx as usize] &= 0xff;
+                self.robots[prio as usize].prios -= 1;
             }
 
             if self.bd[ty as usize][tx as usize] != prev {
@@ -678,11 +682,34 @@ impl State {
                 continue;
             }
 
-            let island_size =
-                self.paint(mx, my, true, false, 0, self.island_size_threshold as usize);
-            self.paint(mx, my, false, false, 0, self.island_size_threshold as usize);
+            let island_size = self.paint(
+                mx,
+                my,
+                i,
+                true,
+                false,
+                0,
+                self.island_size_threshold as usize,
+            );
+            self.paint(
+                mx,
+                my,
+                i,
+                false,
+                false,
+                0,
+                self.island_size_threshold as usize,
+            );
             if island_size < self.island_size_threshold as usize {
-                self.paint(mx, my, true, true, 0, self.island_size_threshold as usize);
+                self.paint(
+                    mx,
+                    my,
+                    i,
+                    true,
+                    true,
+                    0,
+                    self.island_size_threshold as usize,
+                );
             }
         }
     }
@@ -723,7 +750,16 @@ impl State {
         score
     }
 
-    fn paint(&mut self, x: i64, y: i64, b: bool, diff: bool, mut acc: usize, th: usize) -> usize {
+    fn paint(
+        &mut self,
+        x: i64,
+        y: i64,
+        i: usize,
+        b: bool,
+        diff: bool,
+        mut acc: usize,
+        th: usize,
+    ) -> usize {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
 
@@ -731,39 +767,41 @@ impl State {
             return acc;
         }
 
-        let flg = if b { 0 } else { 4 };
-
         if !(x >= 0 && x < w && y >= 0 && y < h) {
             return acc;
         }
 
-        if self.bd[y as usize][x as usize] & 1 != 0 {
+        let cell = self.bd[y as usize][x as usize];
+
+        if cell & 1 != 0 {
             return acc;
         }
 
-        if self.bd[y as usize][x as usize] & 2 != 0 {
+        if cell & 2 != 0 {
             return acc;
         }
 
-        if self.bd[y as usize][x as usize] & 4 != flg {
-            return acc;
-        }
-
-        self.diff
-            .bd
-            .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
-        self.bd[y as usize][x as usize] ^= 4;
-        if b {
-            self.prios += 1;
+        if if b {
+            cell >> 8 == 0
         } else {
-            self.prios -= 1;
+            cell >> 8 != i as u16 + 1
+        } {
+            return acc;
+        }
+
+        self.diff.bd.push((x as usize, y as usize, cell));
+        self.bd[y as usize][x as usize] ^= (i as u16 + 1) << 8;
+        if b {
+            self.robots[i].prios += 1;
+        } else {
+            self.robots[i].prios -= 1;
         }
 
         acc += 1;
-        acc = self.paint(x + 1, y, b, diff, acc, th);
-        acc = self.paint(x - 1, y, b, diff, acc, th);
-        acc = self.paint(x, y + 1, b, diff, acc, th);
-        acc = self.paint(x, y - 1, b, diff, acc, th);
+        acc = self.paint(x + 1, y, i, b, diff, acc, th);
+        acc = self.paint(x - 1, y, i, b, diff, acc, th);
+        acc = self.paint(x, y + 1, i, b, diff, acc, th);
+        acc = self.paint(x, y - 1, i, b, diff, acc, th);
         acc
     }
 
@@ -779,7 +817,7 @@ impl State {
         self.move_to(self.robots[i].x, self.robots[i].y, i);
     }
 
-    fn nearest_empty_dist(&self, i: usize, f: impl Fn(u8) -> bool) -> usize {
+    fn nearest_empty_dist(&self, i: usize, f: impl Fn(u16) -> bool) -> usize {
         if self.rest == 0 {
             0
         } else {
@@ -858,7 +896,7 @@ fn test_pass_cells() {
 }
 
 fn solve(
-    bd_org: &Vec<Vec<u8>>,
+    bd_org: &Board,
     sx: i64,
     sy: i64,
     island_size_threshold: i64,
@@ -881,6 +919,15 @@ fn solve(
         let mut cmds = vec![];
         let robot_num = state.robots.len();
 
+        let shortest_mop = state
+            .robots
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.manips.len(), i))
+            .min()
+            .unwrap()
+            .1;
+
         items1 = items2;
         items2 = state.items.clone();
 
@@ -896,9 +943,9 @@ fn solve(
 
                     // eprintln!("*****CLONE*****");
                     } else {
-                        if nearest(&state, i, |c| (c >> 4) == 4).is_none() {
-                            state.dump();
-                        }
+                        // if nearest(&state, i, |c| (c >> 4) == 4).is_none() {
+                        //     state.dump();
+                        // }
 
                         let (nx, ny) = nearest(&state, i, |c| (c >> 4) == 4).unwrap();
                         cmds.push(Command::Move(
@@ -948,7 +995,12 @@ fn solve(
             }
 
             let n = nearest(&state, i, |c| {
-                c & 2 == 0 && if state.prios > 0 { c & 4 != 0 } else { true }
+                c & 2 == 0
+                    && if state.robots[i].prios > 0 {
+                        c >> 8 == i as u16 + 1
+                    } else {
+                        true
+                    }
             });
             if n.is_none() {
                 if i == 0 {
@@ -962,7 +1014,7 @@ fn solve(
 
             // 手が増やせるならとりあえず縦に増やす
             if increase_mop {
-                if items1[1] > 0 {
+                if items1[1] > 0 && i == shortest_mop {
                     items1[1] -= 1;
                     items2[1] -= 1;
                     state.items[1] -= 1;
@@ -1018,7 +1070,7 @@ fn solve(
     ret
 }
 
-// fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+// fn solve2(bd: &Board, sx: i64, sy: i64) -> Vec<Command> {
 //     let mut state = State::new(bd, sx, sy, 50);
 //     let mut ret = vec![];
 
