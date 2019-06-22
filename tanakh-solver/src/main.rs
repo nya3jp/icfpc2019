@@ -57,7 +57,10 @@ enum Command {
     AttachManip(i64, i64),
     AttachWheel,
     StartDrill,
+    Clone,
 }
+
+type Solution = Vec<Vec<Command>>;
 
 #[derive(Debug, Clone)]
 struct Input {
@@ -191,22 +194,34 @@ fn print_bd(bd: &Vec<Vec<u8>>) {
     eprintln!();
 }
 
-fn encode_commands(ans: &[Command]) -> String {
+fn encode_commands(ans: &Solution) -> String {
     let mut ret = String::new();
-    for cmd in ans.iter() {
-        match cmd {
-            Command::Move(0, 1) => ret += "W",
-            Command::Move(0, -1) => ret += "S",
-            Command::Move(-1, 0) => ret += "A",
-            Command::Move(1, 0) => ret += "D",
-            Command::Move(_, _) => panic!("Invalid move: {:?}", cmd),
+    let num = ans.iter().map(|r| r.len()).max().unwrap();
 
-            Command::Nop => ret += "Z",
-            Command::Turn(true) => ret += "E",
-            Command::Turn(false) => ret += "Q",
-            Command::AttachManip(dx, dy) => ret += &format!("B({},{})", dx, dy),
-            Command::AttachWheel => ret += "F",
-            Command::StartDrill => ret += "L",
+    for i in 0..num {
+        if i > 0 {
+            ret += "#";
+        }
+        for cmds in ans.iter() {
+            if i < cmds.len() {
+                let cmd = &cmds[i];
+                match cmd {
+                    Command::Move(0, 1) => ret += "W",
+                    Command::Move(0, -1) => ret += "S",
+                    Command::Move(-1, 0) => ret += "A",
+                    Command::Move(1, 0) => ret += "D",
+                    Command::Move(_, _) => panic!("Invalid move: {:?}", cmd),
+
+                    Command::Nop => ret += "Z",
+                    Command::Turn(true) => ret += "E",
+                    Command::Turn(false) => ret += "Q",
+                    Command::AttachManip(dx, dy) => ret += &format!("B({},{})", dx, dy),
+                    Command::AttachWheel => ret += "F",
+                    Command::StartDrill => ret += "L",
+
+                    Command::Clone => ret += "C",
+                }
+            }
         }
     }
     ret
@@ -290,10 +305,9 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(state: &State) -> Option<(i64, i64)> {
+fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i64, i64)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
-    let has_prios = state.prios > 0;
 
     /*
         let mut q = VecDeque::new();
@@ -364,8 +378,8 @@ fn nearest(state: &State) -> Option<(i64, i64)> {
     let mut ret = None;
 
     for (dx, dy) in VECT.iter() {
-        let cx = state.x + dx;
-        let cy = state.y + dy;
+        let cx = state.robots[i].x + dx;
+        let cy = state.robots[i].y + dy;
 
         if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
             continue;
@@ -375,8 +389,8 @@ fn nearest(state: &State) -> Option<(i64, i64)> {
             continue;
         }
 
-        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, has_prios) {
-            let sc = state.try_move_to(cx, cy);
+        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, f) {
+            let sc = state.try_move_to(cx, cy, i);
             if (dist, -sc) < best_score {
                 best_score = (dist, -sc);
                 ret = Some((cx, cy));
@@ -387,20 +401,13 @@ fn nearest(state: &State) -> Option<(i64, i64)> {
     ret
 }
 
-fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<usize> {
+fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, f: impl Fn(u8) -> bool) -> Option<usize> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
-    if bd[y as usize][x as usize] & 2 == 0
-        && if has_prios {
-            bd[y as usize][x as usize] & 4 != 0
-        } else {
-            true
-        }
-    {
+    if f(bd[y as usize][x as usize]) {
         return Some(0);
     }
-
 
     let mut q = VecDeque::new();
     q.push_back((x, y, 0));
@@ -428,13 +435,7 @@ fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Opt
             close.insert((nx, ny));
             q.push_back((nx, ny, dep + 1));
 
-            if bd[ny as usize][nx as usize] & 2 == 0
-                && if has_prios {
-                    bd[ny as usize][nx as usize] & 4 != 0
-                } else {
-                    true
-                }
-            {
+            if f(bd[ny as usize][nx as usize]) {
                 return Some(dep + 1);
             }
         }
@@ -443,14 +444,19 @@ fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Opt
     None
 }
 
-struct State {
-    bd: Vec<Vec<u8>>,
+struct RobotState {
     x: i64,
     y: i64,
-    items: Vec<usize>,
     manips: Vec<Pos>,
+}
+
+struct State {
+    bd: Vec<Vec<u8>>,
+    robots: Vec<RobotState>,
+    items: Vec<usize>,
     rest: usize,
     prios: usize,
+    clone_num: usize,
 
     hist: Vec<Diff>,
     diff: Diff,
@@ -470,14 +476,26 @@ struct Diff {
 
 impl State {
     fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64, island_size_threshold: i64) -> State {
+        let mut clone_num = 0;
+        for y in 0..bd.len() {
+            for x in 0..bd[y].len() {
+                if (bd[y][x] >> 4) == 6 {
+                    clone_num += 1;
+                }
+            }
+        }
+
         let mut ret = State {
             bd: bd.clone(),
-            x,
-            y,
+            robots: vec![RobotState {
+                x,
+                y,
+                manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+            }],
             items: vec![0; 6 + 1],
-            manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
             rest: 0,
             prios: 0,
+            clone_num,
 
             hist: vec![],
             diff: Diff::default(),
@@ -485,33 +503,42 @@ impl State {
         };
         ret.rest = ret.paint(x, y, true, false, 0, 1 << 30);
         ret.paint(x, y, false, false, 0, 1 << 30);
-        ret.diff = ret.create_diff();
+        // ret.diff = ret.create_diff();
         ret
     }
 
+    fn add_robot(&mut self, x: i64, y: i64) {
+        self.robots.push(RobotState {
+            x,
+            y,
+            manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+        });
+    }
+
     fn apply(&mut self, c: &Command) -> bool {
-        let h = self.bd.len() as i64;
-        let w = self.bd[0].len() as i64;
+        unimplemented!()
+        // let h = self.bd.len() as i64;
+        // let w = self.bd[0].len() as i64;
 
-        match c {
-            Command::Move(dx, dy) => {
-                let x = self.x + dx;
-                let y = self.y + dy;
-                if !(x >= 0 && x < w && y >= 0 && y < h) {
-                    return false;
-                }
-                if self.bd[y as usize][x as usize] & 1 != 0 {
-                    return false;
-                }
-                self.move_to(x, y);
-            }
-            Command::Turn(dir) => self.rotate(*dir),
+        // match c {
+        //     Command::Move(dx, dy) => {
+        //         let x = self.x + dx;
+        //         let y = self.y + dy;
+        //         if !(x >= 0 && x < w && y >= 0 && y < h) {
+        //             return false;
+        //         }
+        //         if self.bd[y as usize][x as usize] & 1 != 0 {
+        //             return false;
+        //         }
+        //         self.move_to(x, y);
+        //     }
+        //     Command::Turn(dir) => self.rotate(*dir),
 
-            _ => unreachable!(),
-        }
-        self.hist.push(self.diff.clone());
-        self.diff = self.create_diff();
-        true
+        //     _ => unreachable!(),
+        // }
+        // self.hist.push(self.diff.clone());
+        // self.diff = self.create_diff();
+        // true
     }
 
     fn unapply(&mut self) {
@@ -520,37 +547,39 @@ impl State {
     }
 
     fn create_diff(&self) -> Diff {
-        Diff {
-            bd: vec![],
-            x: self.x,
-            y: self.y,
-            items: self.items.clone(),
-            manips: self.manips.clone(),
-            rest: self.rest,
-            prios: self.prios,
-        }
+        // Diff {
+        //     bd: vec![],
+        //     x: self.x,
+        //     y: self.y,
+        //     items: self.items.clone(),
+        //     manips: self.manips.clone(),
+        //     rest: self.rest,
+        //     prios: self.prios,
+        // }
+        unimplemented!()
     }
 
     fn apply_diff(&mut self, d: Diff) {
-        self.x = d.x;
-        self.y = d.x;
-        self.items = d.items;
-        self.manips = d.manips;
-        self.rest = d.rest;
-        self.rest = d.prios;
+        // self.x = d.x;
+        // self.y = d.x;
+        // self.items = d.items;
+        // self.manips = d.manips;
+        // self.rest = d.rest;
+        // self.rest = d.prios;
 
-        for (x, y, v) in d.bd.into_iter().rev() {
-            self.bd[y][x] = v;
-        }
+        // for (x, y, v) in d.bd.into_iter().rev() {
+        //     self.bd[y][x] = v;
+        // }
+        unimplemented!()
     }
 
-    fn move_to(&mut self, x: i64, y: i64) {
+    fn move_to(&mut self, x: i64, y: i64, i: usize) {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
 
         let mut mark_around = BTreeSet::new();
 
-        for &(dx, dy) in self.manips.iter() {
+        for &(dx, dy) in self.robots[i].manips.iter() {
             let tx = x + dx;
             let ty = y + dy;
             if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
@@ -588,16 +617,22 @@ impl State {
                 mark_around.insert((dx + tx, dy + ty));
             }
         }
-        if self.bd[y as usize][x as usize] >> 4 != 0 {
+        // アイテム取得処理
+        let item = self.bd[y as usize][x as usize] >> 4;
+        if item != 0 && item != 4 {
             self.diff
                 .bd
                 .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
             self.items[(self.bd[y as usize][x as usize] >> 4) as usize] += 1;
             self.bd[y as usize][x as usize] &= 0xf;
+
+            if item == 6 {
+                self.clone_num -= 1;
+            }
         }
 
-        self.x = x;
-        self.y = y;
+        self.robots[i].x = x;
+        self.robots[i].y = y;
 
         // mark islands
         for (mx, my) in mark_around {
@@ -617,13 +652,13 @@ impl State {
         }
     }
 
-    fn try_move_to(&self, x: i64, y: i64) -> i64 {
+    fn try_move_to(&self, x: i64, y: i64, i: usize) -> i64 {
         let mut score = 0;
 
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
 
-        for &(dx, dy) in self.manips.iter() {
+        for &(dx, dy) in self.robots[i].manips.iter() {
             let tx = x + dx;
             let ty = y + dy;
             if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
@@ -697,8 +732,8 @@ impl State {
         acc
     }
 
-    fn rotate(&mut self, dir: bool) {
-        for r in self.manips.iter_mut() {
+    fn rotate(&mut self, dir: bool, i: usize) {
+        for r in self.robots[i].manips.iter_mut() {
             swap(&mut r.0, &mut r.1);
             if dir {
                 r.1 *= -1;
@@ -706,23 +741,26 @@ impl State {
                 r.0 *= -1;
             }
         }
-        self.move_to(self.x, self.y);
+        self.move_to(self.robots[i].x, self.robots[i].y, i);
     }
 
-    fn nearest_empty_dist(&self) -> usize {
+    fn nearest_empty_dist(&self, i: usize, f: impl Fn(u8) -> bool) -> usize {
         if self.rest == 0 {
             0
         } else {
-            nearest_empty_dist(&self.bd, self.x, self.y, false).unwrap()
+            nearest_empty_dist(&self.bd, self.robots[i].x, self.robots[i].y, f).unwrap()
         }
     }
 
-    fn score(&mut self) -> f64 {
-        self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist() as f64 * 0.01
-    }
+    // fn score(&mut self, i: usize) -> f64 {
+    //     self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist(i) as f64 * 0.01
+    // }
 
     fn dump(&self) {
-        eprintln!("{}, {}", self.x, self.y);
+        for i in 0..self.robots.len() {
+            eprintln!("Roboto[{}]: {}, {}", i, self.robots[i].x, self.robots[i].y);
+        }
+        eprintln!("Items: {:?}", self.items);
         print_bd(&self.bd);
     }
 }
@@ -790,138 +828,195 @@ fn solve(
     sy: i64,
     island_size_threshold: i64,
     aggressive_item: bool,
-) -> Vec<Command> {
+) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
     let mut state = State::new(bd_org, sx, sy, island_size_threshold);
-    let mut ret = vec![];
-    state.move_to(sx, sy);
+    let mut ret: Solution = vec![];
+    state.move_to(sx, sy, 0);
 
-    loop {
-        if aggressive_item {
-            let mut done = false;
-            // 隣にアイテムがあったら拾う
-            for &(dx, dy) in VECT.iter() {
-                let cx = dx + state.x;
-                let cy = dy + state.y;
-                if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+    let mut fin = false;
+
+    while !fin {
+        let mut cmds = vec![];
+        let robot_num = state.robots.len();
+
+        let mut items = state.items.clone();
+
+        for i in 0..robot_num {
+            if i == 0 {
+                if state.items[6] > 0 {
+                    if state.bd[state.robots[i].y as usize][state.robots[i].x as usize] >> 4 == 4 {
+                        cmds.push(Command::Clone);
+                        state.add_robot(state.robots[i].x, state.robots[i].y);
+                        state.items[6] -= 1;
+
+                        eprintln!("*****CLONE*****");
+
+                    } else {
+                        if nearest(&state, i, |c| (c >> 4) == 4).is_none() {
+                            state.dump();
+                        }
+
+                        let (nx, ny) = nearest(&state, i, |c| (c >> 4) == 4).unwrap();
+                        cmds.push(Command::Move(
+                            nx - state.robots[i].x,
+                            ny - state.robots[i].y,
+                        ));
+                        state.move_to(nx, ny, i);
+                    }
+                    continue;
+                } else if state.clone_num > 0 {
+                    let (nx, ny) = nearest(&state, i, |c| (c >> 4) == 6).unwrap();
+                    cmds.push(Command::Move(
+                        nx - state.robots[i].x,
+                        ny - state.robots[i].y,
+                    ));
+                    state.move_to(nx, ny, i);
                     continue;
                 }
-                let item = state.bd[cy as usize][cx as usize] >> 4;
-                // 使える奴だけ
-                if item == 1 {
-                    // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
-                    // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
-                    state.move_to(cx, cy);
-                    ret.push(Command::Move(dx, dy));
-                    // eprintln!("{}", state.bd[cy as usize][cx as usize]);
-                    done = true;
-                    break;
-                }
             }
-            if done {
-                // state.dump();
+
+            if aggressive_item {
+                let mut done = false;
+                // 隣にアイテムがあったら拾う
+                for &(dx, dy) in VECT.iter() {
+                    let cx = dx + state.robots[i].x;
+                    let cy = dy + state.robots[i].y;
+                    if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+                        continue;
+                    }
+                    let item = state.bd[cy as usize][cx as usize] >> 4;
+                    // 使える奴だけ
+                    if item == 1 {
+                        // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
+                        // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
+                        state.move_to(cx, cy, i);
+                        cmds.push(Command::Move(dx, dy));
+                        // eprintln!("{}", state.bd[cy as usize][cx as usize]);
+                        done = true;
+                        break;
+                    }
+                }
+                if done {
+                    // state.dump();
+                    continue;
+                }
+
+            }
+
+            let n = nearest(&state, i, |c| {
+                c & 2 == 0 && if state.prios > 0 { c & 4 != 0 } else { true }
+            });
+            if n.is_none() {
+                if i == 0 {
+                    return ret;
+                }
+                fin = true;
+                cmds.push(Command::Nop);
                 continue;
             }
-        }
+            let (nx, ny) = n.unwrap();
 
-        let n = nearest(&state);
-        if n.is_none() {
-            break;
-        }
-        let (nx, ny) = n.unwrap();
+            // 手が増やせるならとりあえず縦に増やす
+            if items[1] > 0 {
+                items[1] -= 1;
+                state.items[1] -= 1;
 
-        // 手が増やせるならとりあえず縦に増やす
-        while state.items[1] > 0 {
-            state.items[1] -= 1;
-
-            for i in 0.. {
-                let dy = if i % 2 == 0 { -2 - i / 2 } else { 2 + i / 2 };
-                if !state.manips.contains(&(1, dy)) {
-                    ret.push(Command::AttachManip(1, dy));
-                    state.manips.push((1, dy));
-                    break;
+                for ii in 0.. {
+                    let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
+                    if !state.robots[i].manips.contains(&(1, dy)) {
+                        eprintln!("**** ADD ARM ****");
+                        cmds.push(Command::AttachManip(1, dy));
+                        state.robots[i].manips.push((1, dy));
+                        break;
+                    }
                 }
+
+                continue;
             }
+
+
+            let dx = nx - state.robots[i].x;
+            let dy = ny - state.robots[i].y;
+
+            // dbg!((dx, dy, &state.manips));
+
+            // 移動する方向にモップを回す
+            // let mut rot_cnt = 0;
+            // while !state.manips.contains(&(dx, dy)) {
+            //     state.rotate(true);
+            //     rot_cnt += 1;
+            // }
+
+            // if rot_cnt == 0 {
+            // } else if rot_cnt == 1 {
+            //     ret.push(Command::Turn(true));
+            // } else if rot_cnt == 2 {
+            //     ret.push(Command::Turn(true));
+            //     ret.push(Command::Turn(true));
+            // } else {
+            //     ret.push(Command::Turn(false));
+            // }
+
+            // dbg!((rot_cnt, &state.manips));
+
+            // 移動
+            cmds.push(Command::Move(dx, dy));
+            state.move_to(nx, ny, i);
+
+            // eprintln!("{}", &encode_commands(&ret));
         }
 
-        let dx = nx - state.x;
-        let dy = ny - state.y;
-
-        // dbg!((dx, dy, &state.manips));
-
-        // 移動する方向にモップを回す
-        // let mut rot_cnt = 0;
-        // while !state.manips.contains(&(dx, dy)) {
-        //     state.rotate(true);
-        //     rot_cnt += 1;
-        // }
-
-        // if rot_cnt == 0 {
-        // } else if rot_cnt == 1 {
-        //     ret.push(Command::Turn(true));
-        // } else if rot_cnt == 2 {
-        //     ret.push(Command::Turn(true));
-        //     ret.push(Command::Turn(true));
-        // } else {
-        //     ret.push(Command::Turn(false));
-        // }
-
-        // dbg!((rot_cnt, &state.manips));
-
-        // 移動
-        ret.push(Command::Move(dx, dy));
-        state.move_to(nx, ny);
-
-        // print_bd(&state.bd);
-        // eprintln!("{}", &encode_commands(&ret));
+        // state.dump();
+        ret.push(cmds);
     }
 
     ret
 }
 
-fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let mut state = State::new(bd, sx, sy, 50);
-    let mut ret = vec![];
+// fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+//     let mut state = State::new(bd, sx, sy, 50);
+//     let mut ret = vec![];
 
-    let cand = vec![
-        Command::Move(0, 1),
-        Command::Move(0, -1),
-        Command::Move(1, 0),
-        Command::Move(-1, 0),
-        Command::Turn(true),
-        Command::Turn(false),
-    ];
+//     let cand = vec![
+//         Command::Move(0, 1),
+//         Command::Move(0, -1),
+//         Command::Move(1, 0),
+//         Command::Move(-1, 0),
+//         Command::Turn(true),
+//         Command::Turn(false),
+//     ];
 
-    while state.rest > 0 {
-        let (_, cmd) = rec(&mut state, &cand, 10);
-        state.apply(&cmd);
-        ret.push(cmd);
-        print_bd(&state.bd);
-    }
+//     while state.rest > 0 {
+//         let (_, cmd) = rec(&mut state, &cand, 10);
+//         state.apply(&cmd);
+//         ret.push(cmd);
+//         print_bd(&state.bd);
+//     }
 
-    ret
-}
+//     ret
+// }
 
-fn rec(state: &mut State, cand: &[Command], rest: usize) -> (f64, Command) {
-    if rest == 0 {
-        return (state.score(), Command::Nop);
-    }
+// fn rec(state: &mut State, cand: &[Command], rest: usize) -> (f64, Command) {
+//     if rest == 0 {
+//         return (state.score(), Command::Nop);
+//     }
 
-    let mut ret = (1e100, Command::Nop);
+//     let mut ret = (1e100, Command::Nop);
 
-    for c in cand.iter() {
-        state.apply(c);
-        let t = rec(state, cand, rest - 1);
-        if t.0 < ret.0 {
-            ret = t;
-        }
-        state.unapply();
-    }
+//     for c in cand.iter() {
+//         state.apply(c);
+//         let t = rec(state, cand, rest - 1);
+//         if t.0 < ret.0 {
+//             ret = t;
+//         }
+//         state.unapply();
+//     }
 
-    ret
-}
+//     ret
+// }
 
 //-----
 
@@ -932,9 +1027,14 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     let mut ans = vec![];
 
-    for i in 0..20 {
+    // let island_th_params = 0..20;
+    let island_th_params = 9..10;
+
+    for i in island_th_params {
+        let aggressive_item_get = 1..2;
+
         let th = 5 + 5 * i;
-        for j in 0..2 {
+        for j in aggressive_item_get {
             let cur = solve(&mut bd, input.init_pos.0, input.init_pos.1, th, j != 0);
             eprintln!("{} {}: {}", i, j, cur.len());
             if ans.len() == 0 || ans.len() > cur.len() {
@@ -1014,7 +1114,7 @@ fn get_best_score(root: &str, name: &str) -> Result<Option<i64>> {
     })
 }
 
-fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<()> {
+fn save_solution(root: &str, name: &str, ans: &Solution, score: i64) -> Result<()> {
     // println!("*****: {:?} {:?} {:?} {}", root, name, score);
 
     let best = get_best_score(root, name)?.unwrap_or(0);
