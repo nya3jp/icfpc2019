@@ -445,8 +445,8 @@ function moveBS(){
     if((move=== 'B') || (move === 'T')){
       while(true){
         ansStr += prevstr[i];
-        i++;
         if(prevstr[i] === ')') break;
+        i++;
       }
     } else {
       ansStr += move;
