@@ -111,6 +111,10 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 		return nil
 	}
 
+	if puzzle == "" || task == "" {
+		return errors.New("not submitting")
+	}
+
 	return submit(ctx, block, puzzle, task)
 }
 
