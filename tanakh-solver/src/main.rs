@@ -6,8 +6,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::mem::swap;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
+
+const ISLAND_SIZE_THRESHOLD: usize = 50;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
@@ -42,6 +45,7 @@ enum Booster {
     L,
     X,
     R,
+    C,
 }
 
 #[derive(Debug)]
@@ -95,6 +99,7 @@ fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
         "L" => Booster::L,
         "X" => Booster::X,
         "R" => Booster::R,
+        "C" => Booster::C,
         _ => unreachable!(),
     };
 
@@ -169,6 +174,8 @@ fn print_bd(bd: &Vec<Vec<u8>>) {
                 'X'
             } else if bd[y][x] >> 4 == 5 {
                 'X'
+            } else if bd[y][x] & 4 != 0 {
+                '+'
             } else if bd[y][x] & 2 != 0 {
                 '.'
             } else if bd[y][x] & 1 != 0 {
@@ -273,6 +280,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
             Booster::L => bd[*y as usize][*x as usize] |= 3 << 4,
             Booster::X => bd[*y as usize][*x as usize] |= 4 << 4,
             Booster::R => bd[*y as usize][*x as usize] |= 5 << 4,
+            Booster::C => bd[*y as usize][*x as usize] |= 6 << 4,
         }
     }
 
@@ -281,7 +289,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
+fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i64)> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
@@ -311,7 +319,13 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
             prev.insert((nx, ny), (cx, cy));
             q.push_back((nx, ny));
 
-            if bd[ny as usize][nx as usize] & 2 == 0 {
+            if bd[ny as usize][nx as usize] & 2 == 0
+                && if has_prios {
+                    bd[ny as usize][nx as usize] & 4 != 0
+                } else {
+                    true
+                }
+            {
                 found = Some((nx, ny));
                 // dbg!((&found, bd[ny as usize][nx as usize]));
                 break;
@@ -342,28 +356,149 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<(i64, i64)> {
     }
 }
 
+fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> Option<usize> {
+    let h = bd.len() as i64;
+    let w = bd[0].len() as i64;
+
+    let mut q = VecDeque::new();
+    q.push_back((x, y, 0));
+
+    let mut close = BTreeSet::<Pos>::new();
+    close.insert((x, y));
+
+    while let Some((cx, cy, dep)) = q.pop_front() {
+        for &(dx, dy) in VECT.iter() {
+            let nx = cx + dx;
+            let ny = cy + dy;
+
+            if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                continue;
+            }
+
+            if bd[ny as usize][nx as usize] & 1 != 0 {
+                continue;
+            }
+
+            if close.contains(&(nx, ny)) {
+                continue;
+            }
+
+            close.insert((nx, ny));
+            q.push_back((nx, ny, dep + 1));
+
+            if bd[ny as usize][nx as usize] & 2 == 0 {
+                return Some(dep + 1);
+            }
+        }
+    }
+
+    None
+}
+
 struct State {
     bd: Vec<Vec<u8>>,
     x: i64,
     y: i64,
     items: Vec<usize>,
     manips: Vec<Pos>,
+    rest: usize,
+    prios: usize,
+
+    hist: Vec<Diff>,
+    diff: Diff,
+}
+
+#[derive(Default, Clone)]
+struct Diff {
+    bd: Vec<(usize, usize, u8)>,
+    x: i64,
+    y: i64,
+    items: Vec<usize>,
+    manips: Vec<Pos>,
+    rest: usize,
+    prios: usize,
 }
 
 impl State {
     fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> State {
-        State {
+        let mut ret = State {
             bd: bd.clone(),
             x,
             y,
-            items: vec![0; 5 + 1],
+            items: vec![0; 6 + 1],
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
+            rest: 0,
+            prios: 0,
+
+            hist: vec![],
+            diff: Diff::default(),
+        };
+        ret.rest = ret.paint(x, y, true, false, 0, 1 << 30);
+        ret.paint(x, y, false, false, 0, 1 << 30);
+        ret.diff = ret.create_diff();
+        ret
+    }
+
+    fn apply(&mut self, c: &Command) -> bool {
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        match c {
+            Command::Move(dx, dy) => {
+                let x = self.x + dx;
+                let y = self.y + dy;
+                if !(x >= 0 && x < w && y >= 0 && y < h) {
+                    return false;
+                }
+                if self.bd[y as usize][x as usize] & 1 != 0 {
+                    return false;
+                }
+                self.move_to(x, y);
+            }
+            Command::Turn(dir) => self.rotate(*dir),
+
+            _ => unreachable!(),
+        }
+        self.hist.push(self.diff.clone());
+        self.diff = self.create_diff();
+        true
+    }
+
+    fn unapply(&mut self) {
+        let d = self.hist.pop().unwrap();
+        self.apply_diff(d);
+    }
+
+    fn create_diff(&self) -> Diff {
+        Diff {
+            bd: vec![],
+            x: self.x,
+            y: self.y,
+            items: self.items.clone(),
+            manips: self.manips.clone(),
+            rest: self.rest,
+            prios: self.prios,
+        }
+    }
+
+    fn apply_diff(&mut self, d: Diff) {
+        self.x = d.x;
+        self.y = d.x;
+        self.items = d.items;
+        self.manips = d.manips;
+        self.rest = d.rest;
+        self.rest = d.prios;
+
+        for (x, y, v) in d.bd.into_iter().rev() {
+            self.bd[y][x] = v;
         }
     }
 
     fn move_to(&mut self, x: i64, y: i64) {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
+
+        let mut mark_around = BTreeSet::new();
 
         for &(dx, dy) in self.manips.iter() {
             let tx = x + dx;
@@ -383,15 +518,120 @@ impl State {
                 continue;
             }
 
+            let prev = self.bd[ty as usize][tx as usize];
+
+            if self.bd[ty as usize][tx as usize] & 2 == 0 {
+                self.rest -= 1;
+            }
             self.bd[ty as usize][tx as usize] |= 2;
+
+            if self.bd[ty as usize][tx as usize] & 4 != 0 {
+                self.bd[ty as usize][tx as usize] &= !4;
+                self.prios -= 1;
+            }
+
+            if self.bd[ty as usize][tx as usize] != prev {
+                self.diff.bd.push((tx as usize, ty as usize, prev));
+            }
+
+            for &(dx, dy) in VECT.iter() {
+                mark_around.insert((dx + tx, dy + ty));
+            }
         }
         if self.bd[y as usize][x as usize] >> 4 != 0 {
+            self.diff
+                .bd
+                .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
             self.items[(self.bd[y as usize][x as usize] >> 4) as usize] += 1;
             self.bd[y as usize][x as usize] &= 0xf;
         }
 
         self.x = x;
         self.y = y;
+
+        // mark islands
+        for (mx, my) in mark_around {
+            if !(mx >= 0 && mx < w && my >= 0 && my < h) {
+                continue;
+            }
+            if self.bd[my as usize][mx as usize] & 4 != 0 {
+                continue;
+            }
+
+            let island_size = self.paint(mx, my, true, false, 0, ISLAND_SIZE_THRESHOLD);
+            self.paint(mx, my, false, false, 0, ISLAND_SIZE_THRESHOLD);
+            if island_size < ISLAND_SIZE_THRESHOLD {
+                self.paint(mx, my, true, true, 0, ISLAND_SIZE_THRESHOLD);
+            }
+        }
+    }
+
+    fn paint(&mut self, x: i64, y: i64, b: bool, diff: bool, mut acc: usize, th: usize) -> usize {
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        if b && acc >= th {
+            return acc;
+        }
+
+        let flg = if b { 0 } else { 4 };
+
+        if !(x >= 0 && x < w && y >= 0 && y < h) {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 1 != 0 {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 2 != 0 {
+            return acc;
+        }
+
+        if self.bd[y as usize][x as usize] & 4 != flg {
+            return acc;
+        }
+
+        self.diff
+            .bd
+            .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
+        self.bd[y as usize][x as usize] ^= 4;
+        if b {
+            self.prios += 1;
+        } else {
+            self.prios -= 1;
+        }
+
+        acc += 1;
+        acc = self.paint(x + 1, y, b, diff, acc, th);
+        acc = self.paint(x - 1, y, b, diff, acc, th);
+        acc = self.paint(x, y + 1, b, diff, acc, th);
+        acc = self.paint(x, y - 1, b, diff, acc, th);
+        acc
+    }
+
+    fn rotate(&mut self, dir: bool) {
+        for r in self.manips.iter_mut() {
+            swap(&mut r.0, &mut r.1);
+            if dir {
+                r.1 *= -1;
+            } else {
+                r.0 *= -1;
+            }
+        }
+        self.move_to(self.x, self.y);
+    }
+
+    fn nearest_empty_dist(&self) -> usize {
+        if self.rest == 0 {
+            0
+        } else {
+            nearest_empty_dist(&self.bd, self.x, self.y).unwrap()
+        }
+    }
+
+    fn score(&mut self) -> f64 {
+        self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist() as f64 * 0.01
     }
 }
 
@@ -402,18 +642,24 @@ fn pass_cells(x1: i64, y1: i64, x2: i64, y2: i64) -> Vec<(i64, i64)> {
         pass_cells(x2, y2, x1, y1)
     } else {
         let mut ret = vec![];
-        let mut grad = Rational::new((y2-y1) as _, (x2-x1) as _);
+        let grad = Rational::new((y2 - y1) as _, (x2 - x1) as _);
         let half = Rational::new(1, 2);
         for x in x1..=x2 {
-            let l = max(Rational::from_integer(x1 as _),
-                Rational::from_integer(x as _) - half);
-            let r = min(Rational::from_integer(x2 as _),
-                Rational::from_integer(x as _) + half);
+            let l = max(
+                Rational::from_integer(x1 as _),
+                Rational::from_integer(x as _) - half,
+            );
+            let r = min(
+                Rational::from_integer(x2 as _),
+                Rational::from_integer(x as _) + half,
+            );
 
-            let ly: Rational =
-                Rational::from_integer(y1 as _) + (l - Rational::from_integer(x1 as _)) * grad + half;
-            let ry: Rational =
-                Rational::from_integer(y1 as _) + (r - Rational::from_integer(x1 as _)) * grad + half;
+            let ly: Rational = Rational::from_integer(y1 as _)
+                + (l - Rational::from_integer(x1 as _)) * grad
+                + half;
+            let ry: Rational = Rational::from_integer(y1 as _)
+                + (r - Rational::from_integer(x1 as _)) * grad
+                + half;
 
             let lo = min(*ly.floor().numer(), *ry.floor().numer());
             let hi = max(*ly.ceil().numer(), *ry.ceil().numer());
@@ -433,8 +679,14 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, -1, 1), vec![(-1, 1), (0, 0)]);
     assert_eq!(pass_cells(0, 0, 1, 1), vec![(0, 0), (1, 1)]);
 
-    assert_eq!(pass_cells(0, 0, -2, 1), vec![(-2, 1), (-1, 0), (-1, 1), (0, 0)]);
-    assert_eq!(pass_cells(0, 0, -3, 1), vec![(-3, 1), (-2, 1), (-1, 0), (0, 0)]);
+    assert_eq!(
+        pass_cells(0, 0, -2, 1),
+        vec![(-2, 1), (-1, 0), (-1, 1), (0, 0)]
+    );
+    assert_eq!(
+        pass_cells(0, 0, -3, 1),
+        vec![(-3, 1), (-2, 1), (-1, 0), (0, 0)]
+    );
 
     assert_eq!(pass_cells(0, 0, 1, 2), vec![(0, 0), (0, 1), (1, 1), (1, 2)]);
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
@@ -448,17 +700,18 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
     let mut ret = vec![];
 
     loop {
-        let n = nearest(&state.bd, state.x, state.y);
+        let n = nearest(&state.bd, state.x, state.y, state.prios > 0);
         if n.is_none() {
             break;
         }
         let (nx, ny) = n.unwrap();
 
+        // 手が増やせるならとりあえず縦に増やす
         while state.items[1] > 0 {
             state.items[1] -= 1;
 
             for i in 0.. {
-                let dy = if i % 2 == 0 {-2 - i/2} else {2 + i/2};
+                let dy = if i % 2 == 0 { -2 - i / 2 } else { 2 + i / 2 };
                 if !state.manips.contains(&(1, dy)) {
                     ret.push(Command::AttachManip(1, dy));
                     state.manips.push((1, dy));
@@ -469,7 +722,49 @@ fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
 
         ret.push(Command::Move(nx - state.x, ny - state.y));
         state.move_to(nx, ny);
+
         // print_bd(&state.bd);
+    }
+
+    ret
+}
+
+fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+    let mut state = State::new(bd, sx, sy);
+    let mut ret = vec![];
+
+    let cand = vec![
+        Command::Move(0, 1),
+        Command::Move(0, -1),
+        Command::Move(1, 0),
+        Command::Move(-1, 0),
+        Command::Turn(true),
+        Command::Turn(false),
+    ];
+
+    while state.rest > 0 {
+        let (_, cmd) = rec(&mut state, &cand, 10);
+        state.apply(&cmd);
+        ret.push(cmd);
+    }
+
+    ret
+}
+
+fn rec(state: &mut State, cand: &[Command], rest: usize) -> (f64, Command) {
+    if rest == 0 {
+        return (state.score(), Command::Nop);
+    }
+
+    let mut ret = (1e100, Command::Nop);
+
+    for c in cand.iter() {
+        state.apply(c);
+        let t = rec(state, cand, rest - 1);
+        if t.0 < ret.0 {
+            ret = t;
+        }
+        state.unapply();
     }
 
     ret
@@ -489,7 +784,12 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
     let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    println!("Score for {}: score = {}, best_score = {}", name, score, bs.unwrap_or(-1));
+    println!(
+        "Score for {}: score = {}, best_score = {}",
+        name,
+        score,
+        bs.unwrap_or(-1)
+    );
 
     if show_solution {
         println!("{}", encode_commands(&ans));
@@ -563,7 +863,10 @@ fn save_solution(root: &str, name: &str, ans: &[Command], score: i64) -> Result<
 
 fn main() -> Result<()> {
     match Opt::from_args() {
-        Opt::Solve { input, show_solution } => {
+        Opt::Solve {
+            input,
+            show_solution,
+        } => {
             let problem = read_input(&input)?;
             solve_lightning(&get_problem_name(&input), &problem, show_solution)?;
         }
