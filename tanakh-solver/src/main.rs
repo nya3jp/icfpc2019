@@ -10,7 +10,7 @@ use std::mem::swap;
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-const ISLAND_SIZE_THRESHOLD: usize = 50;
+// const ISLAND_SIZE_THRESHOLD: usize = 50;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
@@ -454,6 +454,7 @@ struct State {
 
     hist: Vec<Diff>,
     diff: Diff,
+    island_size_threshold: i64,
 }
 
 #[derive(Default, Clone)]
@@ -468,7 +469,7 @@ struct Diff {
 }
 
 impl State {
-    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64) -> State {
+    fn new(bd: &Vec<Vec<u8>>, x: i64, y: i64, island_size_threshold: i64) -> State {
         let mut ret = State {
             bd: bd.clone(),
             x,
@@ -480,6 +481,7 @@ impl State {
 
             hist: vec![],
             diff: Diff::default(),
+            island_size_threshold: island_size_threshold,
         };
         ret.rest = ret.paint(x, y, true, false, 0, 1 << 30);
         ret.paint(x, y, false, false, 0, 1 << 30);
@@ -606,10 +608,11 @@ impl State {
                 continue;
             }
 
-            let island_size = self.paint(mx, my, true, false, 0, ISLAND_SIZE_THRESHOLD);
-            self.paint(mx, my, false, false, 0, ISLAND_SIZE_THRESHOLD);
-            if island_size < ISLAND_SIZE_THRESHOLD {
-                self.paint(mx, my, true, true, 0, ISLAND_SIZE_THRESHOLD);
+            let island_size =
+                self.paint(mx, my, true, false, 0, self.island_size_threshold as usize);
+            self.paint(mx, my, false, false, 0, self.island_size_threshold as usize);
+            if island_size < self.island_size_threshold as usize {
+                self.paint(mx, my, true, true, 0, self.island_size_threshold as usize);
             }
         }
     }
@@ -781,38 +784,46 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
-fn solve(bd_org: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+fn solve(
+    bd_org: &Vec<Vec<u8>>,
+    sx: i64,
+    sy: i64,
+    island_size_threshold: i64,
+    aggressive_item: bool,
+) -> Vec<Command> {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd_org, sx, sy);
+    let mut state = State::new(bd_org, sx, sy, island_size_threshold);
     let mut ret = vec![];
     state.move_to(sx, sy);
 
     loop {
-        let mut done = false;
-        // 隣にアイテムがあったら拾う
-        for &(dx, dy) in VECT.iter() {
-            let cx = dx + state.x;
-            let cy = dy + state.y;
-            if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+        if aggressive_item {
+            let mut done = false;
+            // 隣にアイテムがあったら拾う
+            for &(dx, dy) in VECT.iter() {
+                let cx = dx + state.x;
+                let cy = dy + state.y;
+                if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+                    continue;
+                }
+                let item = state.bd[cy as usize][cx as usize] >> 4;
+                // 使える奴だけ
+                if item == 1 {
+                    // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
+                    // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
+                    state.move_to(cx, cy);
+                    ret.push(Command::Move(dx, dy));
+                    // eprintln!("{}", state.bd[cy as usize][cx as usize]);
+                    done = true;
+                    break;
+                }
+            }
+            if done {
+                // state.dump();
                 continue;
             }
-            let item = state.bd[cy as usize][cx as usize] >> 4;
-            // 使える奴だけ
-            if item == 1 {
-                // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
-                // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
-                state.move_to(cx, cy);
-                ret.push(Command::Move(dx, dy));
-                // eprintln!("{}", state.bd[cy as usize][cx as usize]);
-                done = true;
-                break;
-            }
-        }
-        if done {
-            // state.dump();
-            continue;
         }
 
         let n = nearest(&state);
@@ -871,7 +882,7 @@ fn solve(bd_org: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
 }
 
 fn solve2(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let mut state = State::new(bd, sx, sy);
+    let mut state = State::new(bd, sx, sy, 50);
     let mut ret = vec![];
 
     let cand = vec![
@@ -918,8 +929,19 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
-    let ans = solve(&mut bd, input.init_pos.0, input.init_pos.1);
-    // print_ans(&ans);
+
+    let mut ans = vec![];
+
+    for i in 0..20 {
+        let th = 5 + 5 * i;
+        for j in 0..2 {
+            let cur = solve(&mut bd, input.init_pos.0, input.init_pos.1, th, j != 0);
+            eprintln!("{} {}: {}", i, j, cur.len());
+            if ans.len() == 0 || ans.len() > cur.len() {
+                ans = cur;
+            }
+        }
+    }
 
     let score = ans.len() as i64;
     // eprintln!("Score: {}", score);
