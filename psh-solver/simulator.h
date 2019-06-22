@@ -134,6 +134,9 @@ class Map {
         absl::nullopt : absl::make_optional(iter->second);
   }
 
+  int width() const { return width_; }
+  int height() const { return height_; }
+
   int remaining() const { return remaining_; }
 
   const std::vector<Wrapper>& wrappers() const { return wrappers_; }
