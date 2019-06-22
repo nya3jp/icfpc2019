@@ -28,11 +28,17 @@ enum Opt {
         #[structopt(short = "s")]
         show_solution: bool,
 
+        #[structopt(long = "increase-mop")]
+        increase_mop: bool,
+
         input: Option<PathBuf>,
     },
 
     #[structopt(name = "pack")]
     Pack,
+
+    #[structopt(name = "solve-puzzle")]
+    SolvePuzzle { input: Option<PathBuf> },
 }
 
 type Pos = (i64, i64);
@@ -656,7 +662,7 @@ impl State {
             }
 
             if item == 1 {
-                eprintln!("**** GET ARM ****");
+                // eprintln!("**** GET ARM ****");
             }
         }
 
@@ -857,6 +863,7 @@ fn solve(
     sy: i64,
     island_size_threshold: i64,
     aggressive_item: bool,
+    increase_mop: bool,
 ) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
@@ -867,11 +874,15 @@ fn solve(
 
     let mut fin = false;
 
+    let mut items1 = state.items.clone();
+    let mut items2 = state.items.clone();
+
     while !fin {
         let mut cmds = vec![];
         let robot_num = state.robots.len();
 
-        let mut items = state.items.clone();
+        items1 = items2;
+        items2 = state.items.clone();
 
         // eprintln!("### TURN");
 
@@ -883,8 +894,7 @@ fn solve(
                         state.add_robot(state.robots[i].x, state.robots[i].y);
                         state.items[6] -= 1;
 
-                        eprintln!("*****CLONE*****");
-
+                    // eprintln!("*****CLONE*****");
                     } else {
                         if nearest(&state, i, |c| (c >> 4) == 4).is_none() {
                             state.dump();
@@ -951,23 +961,24 @@ fn solve(
             let (nx, ny) = n.unwrap();
 
             // 手が増やせるならとりあえず縦に増やす
-            // if items[1] > 0 {
-            //     items[1] -= 1;
-            //     state.items[1] -= 1;
+            if increase_mop {
+                if items1[1] > 0 {
+                    items1[1] -= 1;
+                    items2[1] -= 1;
+                    state.items[1] -= 1;
 
-            //     for ii in 0.. {
-            //         let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
-            //         if !state.robots[i].manips.contains(&(1, dy)) {
-            //             eprintln!("**** ADD ARM ****");
-            //             cmds.push(Command::AttachManip(1, dy));
-            //             state.robots[i].manips.push((1, dy));
-            //             break;
-            //         }
-            //     }
-
-            //     continue;
-            // }
-
+                    for ii in 0.. {
+                        let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
+                        if !state.robots[i].manips.contains(&(1, dy)) {
+                            // eprintln!("**** ADD ARM ****");
+                            cmds.push(Command::AttachManip(1, dy));
+                            state.robots[i].manips.push((1, dy));
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
 
             let dx = nx - state.robots[i].x;
             let dy = ny - state.robots[i].y;
@@ -1051,7 +1062,12 @@ fn solve(
 
 //-----
 
-fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()> {
+fn solve_lightning(
+    name: &str,
+    input: &Input,
+    increase_mop: bool,
+    show_solution: bool,
+) -> Result<()> {
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
@@ -1066,7 +1082,14 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
 
         let th = 5 + 5 * i;
         for j in aggressive_item_get {
-            let cur = solve(&mut bd, input.init_pos.0, input.init_pos.1, th, j != 0);
+            let cur = solve(
+                &mut bd,
+                input.init_pos.0,
+                input.init_pos.1,
+                th,
+                j != 0,
+                increase_mop,
+            );
             eprintln!("{} {}: {}", i, j, cur.len());
             if ans.len() == 0 || ans.len() > cur.len() {
                 ans = cur;
@@ -1161,10 +1184,176 @@ fn save_solution(root: &str, name: &str, ans: &Solution, score: i64) -> Result<(
 
 //-----
 
+#[derive(Debug)]
+struct PuzzleInput {
+    b_num: usize,
+    e_num: usize,
+    t_size: usize,
+    v_min: usize,
+    v_max: usize,
+    m_num: usize,
+    f_num: usize,
+    d_num: usize,
+    r_num: usize,
+    c_num: usize,
+    x_num: usize,
+    i_sqs: Vec<Pos>,
+    o_sqs: Vec<Pos>,
+}
+
+fn parse_puzzle(s: &str) -> Result<PuzzleInput> {
+    let mut jt = s.split('#');
+
+    let mut it = jt.next().unwrap().split(',');
+
+    let b_num = it.next().unwrap().parse().unwrap();
+    let e_num = it.next().unwrap().parse().unwrap();
+    let t_size = it.next().unwrap().parse().unwrap();
+    let v_min = it.next().unwrap().parse().unwrap();
+    let v_max = it.next().unwrap().parse().unwrap();
+    let m_num = it.next().unwrap().parse().unwrap();
+    let f_num = it.next().unwrap().parse().unwrap();
+    let d_num = it.next().unwrap().parse().unwrap();
+    let r_num = it.next().unwrap().parse().unwrap();
+    let c_num = it.next().unwrap().parse().unwrap();
+    let x_num = it.next().unwrap().parse().unwrap();
+
+    let i_sqs = parse_pos_list(jt.next().unwrap())?;
+    let o_sqs = parse_pos_list(jt.next().unwrap())?;
+
+    Ok(PuzzleInput {
+        b_num,
+        e_num,
+        t_size,
+        v_min,
+        v_max,
+        m_num,
+        f_num,
+        d_num,
+        r_num,
+        c_num,
+        x_num,
+        i_sqs,
+        o_sqs,
+    })
+}
+
+fn solve_puzzle(input: &PuzzleInput) {
+    let n = input.t_size;
+    let mut bd = vec![vec!['#'; n]; n];
+
+    for y in 1..n - 1 {
+        for x in 1..n - 1 {
+            bd[y][x] = ' ';
+        }
+    }
+
+    for &(x, y) in input.i_sqs.iter() {
+        bd[y as usize][x as usize] = 'o';
+    }
+
+    bd[input.o_sqs[0].1 as usize][input.o_sqs[0].0 as usize] = '#';
+
+    for &(x, y) in input.o_sqs[1..].iter() {
+        let b = rec_gen(&mut bd, x, y);
+        // assert!(b);
+
+        paint_puzzle(&mut bd, x, y);
+
+        for row in bd.iter() {
+            eprintln!("{}", row.iter().collect::<String>());
+        }
+        eprintln!("===");
+    }
+}
+
+fn rec_gen(bd: &mut Vec<Vec<char>>, x: i64, y: i64) -> bool {
+    // for row in bd.iter() {
+    //     eprintln!("{}", row.iter().collect::<String>());
+    // }
+    // eprintln!("===");
+
+    let n = bd.len() as i64;
+    if !(x >= 0 && x < n && y >= 0 && y < n) {
+        return true;
+    }
+
+    if bd[y as usize][x as usize] == '#' {
+        return true;
+    }
+
+    if bd[y as usize][x as usize] == 'o' {
+        return false;
+    }
+
+    bd[y as usize][x as usize] = '*';
+
+    let mut ord = [0, 1, 2, 3];
+
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
+    let mut rng = thread_rng();
+    ord.shuffle(&mut rng);
+
+    for &o in ord.iter() {
+        let (dx, dy) = VECTS[0][o];
+
+        let nx = x + dx;
+        let ny = y + dy;
+
+        let mut ok = true;
+        for &(ex, ey) in VECTS[0].iter() {
+            let mx = nx + ex;
+            let my = ny + ey;
+
+            if (x, y) == (mx, my) {
+                continue;
+            }
+
+            if mx >= 0 && mx < n && my >= 0 && my < n && bd[my as usize][mx as usize] == '*' {
+                ok = false;
+                break;
+            }
+        }
+        if !ok {
+            continue;
+        }
+
+        if rec_gen(bd, x + dx, y + dy) {
+            return true;
+        }
+    }
+
+    bd[y as usize][x as usize] = ' ';
+    return false;
+}
+
+fn paint_puzzle(bd: &mut Vec<Vec<char>>, x: i64, y: i64) {
+    let h = bd.len() as i64;
+    let w = bd[0].len() as i64;
+
+    if !(x >= 0 && x < w && y >= 0 && y < h) {
+        return;
+    }
+
+    if bd[y as usize][x as usize] != '*' {
+        return;
+    }
+
+    bd[y as usize][x as usize] = '#';
+    paint_puzzle(bd, x + 1, y);
+    paint_puzzle(bd, x - 1, y);
+    paint_puzzle(bd, x, y + 1);
+    paint_puzzle(bd, x, y - 1);
+}
+
+//-----
+
 fn main() -> Result<()> {
     match Opt::from_args() {
         Opt::Solve {
             input,
+            increase_mop,
             show_solution,
         } => {
             let (con, file) = if let Some(file) = input {
@@ -1181,7 +1370,12 @@ fn main() -> Result<()> {
             };
 
             let problem = parse_input(&con)?;
-            solve_lightning(&get_problem_name(&file), &problem, show_solution)?;
+            solve_lightning(
+                &get_problem_name(&file),
+                &problem,
+                increase_mop,
+                show_solution,
+            )?;
         }
         Opt::Pack => {
             let dir = LIGHTNING_DIR;
@@ -1219,6 +1413,22 @@ fn main() -> Result<()> {
                 .arg(format!("../submission-{}.zip", now))
                 .args(&files)
                 .status()?;
+        }
+
+        Opt::SolvePuzzle { input } => {
+            let con = if let Some(file) = input {
+                let mut s = String::new();
+                let _ = File::open(&file)?.read_to_string(&mut s)?;
+                s.trim().to_string()
+            } else {
+                let mut s = String::new();
+                let _ = std::io::stdin().read_to_string(&mut s)?;
+                s.trim().to_string()
+            };
+
+            let problem = parse_puzzle(&con)?;
+            // dbg!(problem);
+            solve_puzzle(&problem);
         }
     }
     Ok(())
