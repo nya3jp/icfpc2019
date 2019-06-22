@@ -290,9 +290,10 @@ fn build_map(input: &Input, w: i64, h: i64) -> Vec<Vec<u8>> {
 
 // solution
 
-fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i64)> {
-    let h = bd.len() as i64;
-    let w = bd[0].len() as i64;
+fn nearest(state: &State) -> Option<(i64, i64)> {
+    let h = state.bd.len() as i64;
+    let w = state.bd[0].len() as i64;
+    let has_prios = state.prios > 0;
 
     /*
         let mut q = VecDeque::new();
@@ -359,30 +360,29 @@ fn nearest(bd: &Vec<Vec<u8>>, x: i64, y: i64, has_prios: bool) -> Option<(i64, i
         }
     */
 
-    let mut best_score = 0xffffffff;
+    let mut best_score = (0xffffffff, 0xffffffff);
     let mut ret = None;
 
     for (dx, dy) in VECT.iter() {
-        let cx = x + dx;
-        let cy = y + dy;
+        let cx = state.x + dx;
+        let cy = state.y + dy;
 
         if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
             continue;
         }
 
-        if bd[cy as usize][cx as usize] & 1 != 0 {
+        if state.bd[cy as usize][cx as usize] & 1 != 0 {
             continue;
         }
 
-        if let Some(dist) = nearest_empty_dist(bd, cx, cy, has_prios) {
-            // dbg!((cx, cy, dist));
-            if dist < best_score {
-                best_score = dist;
+        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, has_prios) {
+            let sc = state.try_move_to(cx, cy);
+            if (dist, -sc) < best_score {
+                best_score = (dist, -sc);
                 ret = Some((cx, cy));
             }
         }
     }
-
 
     ret
 }
@@ -614,6 +614,42 @@ impl State {
         }
     }
 
+    fn try_move_to(&self, x: i64, y: i64) -> i64 {
+        let mut score = 0;
+
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        for &(dx, dy) in self.manips.iter() {
+            let tx = x + dx;
+            let ty = y + dy;
+            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                continue;
+            }
+
+            let mut ok = true;
+            for (px, py) in pass_cells(x, y, tx, ty) {
+                if self.bd[py as usize][px as usize] & 1 != 0 {
+                    ok = false;
+                    break;
+                }
+            }
+            if !ok {
+                continue;
+            }
+
+            let prev = self.bd[ty as usize][tx as usize];
+
+            if self.bd[ty as usize][tx as usize] & 2 == 0 {
+                score += 1;
+            }
+        }
+        if self.bd[y as usize][x as usize] >> 4 != 0 {
+            score += 2;
+        }
+        score
+    }
+
     fn paint(&mut self, x: i64, y: i64, b: bool, diff: bool, mut acc: usize, th: usize) -> usize {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
@@ -681,6 +717,11 @@ impl State {
     fn score(&mut self) -> f64 {
         self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist() as f64 * 0.01
     }
+
+    fn dump(&self) {
+        eprintln!("{}, {}", self.x, self.y);
+        print_bd(&self.bd);
+    }
 }
 
 fn pass_cells(x1: i64, y1: i64, x2: i64, y2: i64) -> Vec<(i64, i64)> {
@@ -740,16 +781,41 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
-fn solve(bd: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
-    let h = bd.len() as i64;
-    let w = bd[0].len() as i64;
+fn solve(bd_org: &Vec<Vec<u8>>, sx: i64, sy: i64) -> Vec<Command> {
+    let h = bd_org.len() as i64;
+    let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd, sx, sy);
+    let mut state = State::new(bd_org, sx, sy);
     let mut ret = vec![];
     state.move_to(sx, sy);
 
     loop {
-        let n = nearest(&state.bd, state.x, state.y, state.prios > 0);
+        let mut done = false;
+        // 隣にアイテムがあったら拾う
+        for &(dx, dy) in VECT.iter() {
+            let cx = dx + state.x;
+            let cy = dy + state.y;
+            if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
+                continue;
+            }
+            let item = state.bd[cy as usize][cx as usize] >> 4;
+            // 使える奴だけ
+            if item == 1 {
+                // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
+                // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
+                state.move_to(cx, cy);
+                ret.push(Command::Move(dx, dy));
+                // eprintln!("{}", state.bd[cy as usize][cx as usize]);
+                done = true;
+                break;
+            }
+        }
+        if done {
+            // state.dump();
+            continue;
+        }
+
+        let n = nearest(&state);
         if n.is_none() {
             break;
         }
