@@ -14,7 +14,7 @@ ROOT_DIR = os.path.dirname(__file__)
 
 API_KEY = 'c868a5215b6bfb6161c6a43363e62d45'
 
-OP_RE = re.compile(r'[WSADZEQFLR]|[BT]\(-?\d+,-?\d+\)')
+OP_RE = re.compile(r'[WSADZEQFLRC]|[BT]\(-?\d+,-?\d+\)')
 PROB_RE = re.compile(r'^prob-\d{3}$')
 
 
@@ -30,17 +30,48 @@ class EvalError(Exception):
     pass
 
 
-def _eval_solution(solution: str) -> int:
-    score = 0
-    pos = 0
+def _validate_replica(solution: str, offset: int):
+    pc = 0
     for m in OP_RE.finditer(solution):
-        if m.start() != pos:
-            raise EvalError('Solution contains unknown instruction %s at position %d' % (solution[pos], pos))
-        score += 1
-        pos = m.end()
-    if pos != len(solution):
-        raise EvalError('Solution contains unknown instruction %s at position %d' % (solution[pos], pos))
-    return score
+        if m.start() != pc:
+            raise EvalError('Solution contains unknown instruction %s at position %d' % (solution[pc], offset + pc))
+        pc = m.end()
+    if pc != len(solution):
+        raise EvalError('Solution contains unknown instruction %s at position %d' % (solution[pc], offset + pc))
+
+
+def eval_solution(solution: str) -> int:
+    replicas = solution.split('#')
+
+    offset = 0
+    for replica in replicas:
+        _validate_replica(replica, offset)
+        offset += len(replica) + 1
+
+    steps = 0
+    pcs = [0]
+    while True:
+        finish = True
+        new_clones = 0
+        for i, (replica, pc) in enumerate(zip(replicas, pcs)):
+            if pc >= len(replica):
+                continue
+            finish = False
+            if replica[pc] == 'C':
+                new_clones += 1
+            pc += 1
+            if pc < len(replica) and replica[pc] == '(':
+                pc += replica[pc:].find(')') + 1
+            pcs[i] = pc
+        if finish:
+            break
+        pcs.extend([0] * new_clones)
+        steps += 1
+
+    if len(pcs) != len(replicas):
+        raise EvalError('Solution contains orphan replica')
+
+    return steps
 
 
 def main():
@@ -52,7 +83,7 @@ def main():
     with open(options.solution) as f:
         solution = f.read().strip()
 
-    score = _eval_solution(solution)
+    score = eval_solution(solution)
 
     if score == 0:
         raise EvalError('Empty solution')

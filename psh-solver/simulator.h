@@ -1,4 +1,5 @@
 #ifndef SIMULATOR_H_
+#define SIMULATOR_H_
 
 #include <cstdint>
 #include <map>
@@ -133,6 +134,9 @@ class Map {
     return iter == booster_map_.end() ?
         absl::nullopt : absl::make_optional(iter->second);
   }
+
+  int width() const { return width_; }
+  int height() const { return height_; }
 
   int remaining() const { return remaining_; }
 

@@ -7,13 +7,15 @@
 #include "absl/strings/string_view.h"
 #include "glog/logging.h"
 
+#include "rational.h"
+
 namespace icfpc2019 {
 namespace {
 
 Point ParsePoint(absl::string_view s) {
   int pos[2];
   int index = 0;
-  for (auto token : absl::StrSplit(s.substr(1, s.length() - 2), ',')) {
+  for (auto token : absl::StrSplit(s, ',')) {
     CHECK(absl::SimpleAtoi(token, pos + (index++)));
   }
   return Point{pos[0], pos[1]};
@@ -21,14 +23,17 @@ Point ParsePoint(absl::string_view s) {
 
 std::vector<Point> ParseMap(absl::string_view s) {
   std::vector<Point> result;
-  for (auto token : absl::StrSplit(s, ')')) {
-    token = token.substr(token[0] == ',' ? 2 : 1, token.length() - 2);
+  for (auto token : absl::StrSplit(s, ')', absl::SkipEmpty())) {
+    int start = token[0] == ',' ? 2 : 1;
+    token = token.substr(start, token.length() - start);
     result.push_back(ParsePoint(token));
   }
   return result;
 }
 
 std::vector<std::vector<Point>> ParseObstacles(absl::string_view s) {
+  if (s.empty())
+    return {};
   std::vector<std::vector<Point>> result;
   for (auto token : absl::StrSplit(s, ';')) {
     result.push_back(ParseMap(token));
@@ -37,9 +42,12 @@ std::vector<std::vector<Point>> ParseObstacles(absl::string_view s) {
 }
 
 std::vector<std::pair<Point, Booster>> ParseBoosters(absl::string_view s) {
+  if (s.empty())
+    return {};
+
   std::vector<std::pair<Point, Booster>> result;
   for (auto token : absl::StrSplit(s, ';')) {
-    auto p = ParsePoint(token.substr(2, token.length() - 2));
+    auto p = ParsePoint(token.substr(2, token.length() - 3));
     Booster b;
     switch (token[0]) {
       case 'B': b = Booster::B; break;
@@ -106,6 +114,46 @@ std::vector<Cell> ConvertMap(
   }
 
   return result;
+}
+
+bool IsVisible(const Point& origin, const Point& target,
+               const std::vector<Cell>& m,
+               std::size_t width, std::size_t height) {
+  std::vector<Point> points;
+  if (origin.x == target.x) {
+    int miny, maxy;
+    std::tie(miny, maxy) = std::minmax(origin.y, target.y);
+    for (int y = miny; y <= maxy; ++y) {
+      points.push_back(Point{origin.x, y});
+    }
+  } else {
+    Point s = origin, g = target;
+    if (s.x < g.x) {
+      std::swap(s, g);
+    }
+
+    const auto grad = Rational(g.y - s.y, g.x - s.x);
+    for (int x = s.x; x <= g.x; ++x) {
+      auto left = std::max(Rational(s.x), Rational(x) - Rational(1, 2));
+      auto right = std::min(Rational(g.x), Rational(x) + Rational(1, 2));
+
+      auto left_y =
+          Rational(s.y) + (left - Rational(s.x)) * grad + Rational(1, 2);
+      auto right_y =
+          Rational(s.y) + (right - Rational(s.x)) * grad + Rational(1, 2);
+      int lo = std::min(Floor(left_y), Floor(right_y));
+      int hi = std::max(Ceil(left_y), Ceil(right_y));
+      for (int y = lo; y < hi; ++y) {
+        points.push_back(Point{x, y});
+      }
+    }
+  }
+
+  for (const auto& p : points) {
+    if (m[p.y * width + p.x] == Cell::WALL)
+      return false;
+  }
+  return true;
 }
 
 }  // namespace
@@ -251,7 +299,9 @@ void Map::Fill(const Wrapper& wrapper) {
   }
   for (const auto& manip : wrapper.manipulators()) {
     const auto p = wrapper.point() + manip;
-    // TODO isvisible.
+    if (!IsVisible(wrapper.point(), p, map_, width_, height_)) {
+      continue;
+    }
     auto& cell = GetCell(p);
     if (cell != Cell::FILLED) {
       cell = Cell::FILLED;
@@ -260,4 +310,4 @@ void Map::Fill(const Wrapper& wrapper) {
   }
 }
 
-}
+}  // namepace icfpc2019
