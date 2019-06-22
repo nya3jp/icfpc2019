@@ -140,8 +140,11 @@ def main():
         for x in range(tSize):
             if grid[y][x] != ' ':
                 continue
-            if not wrappy:
-                wrappy = f'({x},{y})'
+            wrappy = f'({x},{y})'
+
+    for y in range(tSize):
+        for x in range(tSize):
+            if grid[y][x] != ' ':
                 continue
             if mNum > 0:
                 boosters.append(f'B({x},{y})')

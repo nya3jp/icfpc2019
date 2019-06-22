@@ -18,8 +18,7 @@ while :; do
 
     gsutil -m cp "$blockdir/*" "gs://sound-type-system/blocks/$block/" || continue
 
-    nohup ./block.sh "$block" > "$blockdir/block.stdout.txt" 2> "$blockdir/block.stderr.txt" &
-    disown
+    ./mine.sh "$block" &
 
     touch $seenfile
 done
