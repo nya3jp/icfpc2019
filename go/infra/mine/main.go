@@ -63,12 +63,16 @@ func main() {
 			return err
 		}
 
-		m := &miner{args, cl}
+		m := &miner{
+			args: args,
+			l:    newLogger(args.slackWebhookURL),
+			cl:   cl,
+		}
 		if err := m.Run(ctx); err != nil {
-			m.logf("ERROR: %v", err)
+			m.l.Logf("ERROR: %v", err)
 			return err
 		}
-		m.log("Success!")
+		m.l.Log("Success!")
 		return nil
 	}(); err != nil {
 		panic(fmt.Sprint("ERROR: ", err))
@@ -77,11 +81,12 @@ func main() {
 
 type miner struct {
 	args *args
+	l    *logger
 	cl   *storage.Client
 }
 
 func (m *miner) Run(ctx context.Context) error {
-	m.logf("Start mining block %d", m.args.block)
+	m.l.Logf("Start mining block %d", m.args.block)
 
 	// TODO: Check timestamp.
 	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -92,18 +97,18 @@ func (m *miner) Run(ctx context.Context) error {
 	go func() {
 		name, puzzle, err := m.runPuzzleSolvers(runCtx)
 		if err != nil {
-			m.logf("ERROR: Failed to run puzzle solvers: %v", err)
+			m.l.Logf("Warning: Failed to run puzzle solvers: %v", err)
 		} else {
-			m.logf("Selected the puzzle solution by %s", name)
+			m.l.Logf("Selected the puzzle solution by %s", name)
 		}
 		puzzleCh <- puzzle
 	}()
 	go func() {
 		name, task, err := m.runTaskSolvers(runCtx)
 		if err != nil {
-			m.logf("ERROR: Failed to run task solvers: %v", err)
+			m.l.Logf("Warning: Failed to run task solvers: %v", err)
 		} else {
-			m.logf("Selected the task solution by %s", name)
+			m.l.Logf("Selected the task solution by %s", name)
 		}
 		taskCh <- task
 	}()
@@ -119,7 +124,7 @@ func (m *miner) Run(ctx context.Context) error {
 		return errors.New("no valid solution pair to the block problem")
 	}
 
-	m.log("Submitting...")
+	m.l.Log("Submitting...")
 	return m.submit(ctx, puzzle, task)
 }
 
@@ -175,10 +180,10 @@ func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ 
 		select {
 		case r := <-ch:
 			if r.err == nil {
-				m.logf("Puzzle solver %s passed: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, bucket, m.args.block, r.name)
+				m.l.Logf("Puzzle solver %s passed: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, bucket, m.args.block, r.name)
 				return r.name, r.solution, nil
 			}
-			m.logf("ERROR: Failed to run the puzzle solver %s: %v", r.name, r.err)
+			m.l.Logf("Warning: Failed to run the puzzle solver %s: %v", r.name, r.err)
 			done++
 		case <-ctx.Done():
 			return "", "", fmt.Errorf("no puzzle solver passed before deadline: %v", ctx.Err())
@@ -201,7 +206,7 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/solvers/puzzle/%s/", bucket, m.args.block, name),
 	}
-	m.logf("Running the puzzle solver %s", name)
+	m.l.Logf("Running the puzzle solver %s", name)
 	if err := m.runTask(ctx, t); err != nil {
 		return "", err
 	}
@@ -245,9 +250,9 @@ loop:
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				m.logf("ERROR: Failed to run the task solver %s: %v", r.name, r.err)
+				m.l.Logf("Warning: Failed to run the task solver %s: %v", r.name, r.err)
 			} else {
-				m.logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
+				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -278,7 +283,7 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/solvers/task/%s/", bucket, m.args.block, name),
 	}
-	m.logf("Running the task solver %s", name)
+	m.l.Logf("Running the task solver %s", name)
 	if err := m.runTask(ctx, t); err != nil {
 		return "", 0, err
 	}
@@ -363,7 +368,7 @@ func (m *miner) submit(ctx context.Context, puzzle, task string) error {
 		filepath.Join(blockDir, "submit.sol"),
 		filepath.Join(blockDir, "submit.desc"))
 	out, err := cmd.CombinedOutput()
-	m.log(string(out))
+	m.l.Log(string(out))
 	return err
 }
 
@@ -378,28 +383,52 @@ type pkg struct {
 	Dest string `json:"dest,omitempty"`
 }
 
-func (m *miner) log(args ...interface{}) {
+type logger struct {
+	ch              chan string
+	slackWebhookURL string
+}
+
+func newLogger(slackWebhookURL string) *logger {
+	l := &logger{
+		ch:              make(chan string, 1000),
+		slackWebhookURL: slackWebhookURL,
+	}
+	go l.run()
+	return l
+}
+
+func (l *logger) Close() {
+	close(l.ch)
+}
+
+func (l *logger) Log(args ...interface{}) {
 	msg := fmt.Sprint(args...)
-	fmt.Fprintln(os.Stderr, msg)
-	go m.postToSlack(msg)
+	l.ch <- msg
 }
 
-func (m *miner) logf(format string, args ...interface{}) {
+func (l *logger) Logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintln(os.Stderr, msg)
-	go m.postToSlack(msg)
+	l.ch <- msg
 }
 
-func (m *miner) postToSlack(text string) error {
-	if m.args.slackWebhookURL == "" {
+func (l *logger) run() {
+	for msg := range l.ch {
+		l.emit(msg)
+	}
+}
+
+func (l *logger) emit(msg string) error {
+	fmt.Fprintln(os.Stderr, msg)
+
+	if l.slackWebhookURL == "" {
 		return nil
 	}
 
-	req := map[string]string{"text": text}
+	req := map[string]string{"text": msg}
 	data, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
-	_, err = http.Post(m.args.slackWebhookURL, "application/json", bytes.NewReader(data))
+	_, err = http.Post(l.slackWebhookURL, "application/json", bytes.NewReader(data))
 	return err
 }

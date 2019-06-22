@@ -148,6 +148,62 @@ class Wrapper {
   Booster pending_booster_ = Booster::X;
 };
 
+class BacklogEntry {
+ public:
+  enum class Action : std::uint8_t {
+    W, WW,
+    A, AA,
+    S, SS,
+    D, DD,
+    Z,
+    Q,
+    E,
+    B, F, L, R, T, C
+  };
+
+  BacklogEntry() = default;
+
+  int wrapper_index() const { return wrapper_index_; }
+  void set_wrapper_index(int index) { wrapper_index_ = index; }
+
+  int drill_count() const { return drill_count_; }
+  void set_drill_count(int count) { drill_count_ = count; }
+
+  int fast_count() const { return fast_count_; }
+  void set_fast_count(int count) { fast_count_ = count; }
+
+  Booster pending_booster() const { return pending_booster_; }
+  void set_pending_booster(Booster b) { pending_booster_ = b; }
+
+  Action action() const { return action_; }
+  void set_action(Action a) { action_ = a; }
+
+  const std::vector<std::pair<Point, Cell>>& updated_cells() const {
+    return updated_cells_;
+  }
+  void add_updated_cell(const Point& point, const Cell& orig) {
+    updated_cells_.emplace_back(point, orig);
+  }
+
+  Booster first_booster() const { return first_booster_; }
+  void set_first_booster(Booster b) { first_booster_ = b; }
+
+  Booster second_booster() const { return second_booster_; }
+  void set_second_booster(Booster b) { second_booster_ = b; }
+
+ private:
+  // TODO using shorter bitwidth ints.
+  int wrapper_index_;
+  int drill_count_;
+  int fast_count_;
+  Booster pending_booster_ = Booster::X;
+  Action action_;
+  Booster first_booster_ = Booster::X;
+  Booster second_booster_ = Booster::X;
+
+  std::vector<std::pair<Point, Cell>> updated_cells_;
+};
+
 class Map {
  public:
   explicit Map(const Desc& desc);
@@ -171,6 +227,7 @@ class Map {
   const std::vector<Wrapper>& wrappers() const { return wrappers_; }
 
   void Run(int index, const Instruction& inst);
+  void Undo();
 
   std::string ToString() const;
 
@@ -181,9 +238,12 @@ class Map {
   Cell& GetCell(const Point& p) {
     return map_[Index(p)];
   }
-  void Move(Wrapper* wrapper, const Point& direction);
-  bool MoveInternal(Wrapper* wrapper, const Point& direction);
-  void Fill(const Wrapper& wrapper);
+  void Move(Wrapper* wrapper, const Point& direction,
+            BacklogEntry* log_entry,
+            BacklogEntry::Action a, BacklogEntry::Action aa);
+  bool MoveInternal(Wrapper* wrapper, const Point& direction,
+                    BacklogEntry* log_entry, bool is_first);
+  void Fill(const Wrapper& wrapper, BacklogEntry* entry);
 
   std::size_t width_;
   std::size_t height_;
@@ -200,6 +260,9 @@ class Map {
   int collected_l_ = 0;
   int collected_r_ = 0;
   int collected_c_ = 0;
+
+  // Maybe deque to limit num backtrackable for performance?
+  std::vector<BacklogEntry> backlogs_;
 };
 
 } // namespace icpfc2019
