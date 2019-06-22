@@ -8,8 +8,9 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::mem::swap;
 use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 
+use std::str::FromStr;
+use structopt::StructOpt;
 // const ISLAND_SIZE_THRESHOLD: usize = 50;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
@@ -27,7 +28,7 @@ enum Opt {
         #[structopt(short = "s")]
         show_solution: bool,
 
-        input: PathBuf,
+        input: Option<PathBuf>,
     },
 
     #[structopt(name = "pack")]
@@ -141,11 +142,7 @@ fn parse_booster_list(s: &str) -> Result<Vec<(Booster, Pos)>> {
         .collect()
 }
 
-fn read_input(path: &Path) -> Result<Input> {
-    let mut s = String::new();
-    let _ = File::open(path)?.read_to_string(&mut s)?;
-    let s = s.trim().to_string();
-
+fn parse_input(s: &str) -> Result<Input> {
     let mut iter = s.split('#');
 
     let ret = Input {
@@ -1080,16 +1077,18 @@ fn solve_lightning(name: &str, input: &Input, show_solution: bool) -> Result<()>
     let score = ans.len() as i64;
     // eprintln!("Score: {}", score);
 
-    let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
+    if name != "stdin" {
+        let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
 
-    eprintln!(
-        "Score for {}: score = {}, best_score = {}",
-        name,
-        score,
-        bs.unwrap_or(-1)
-    );
+        eprintln!(
+            "Score for {}: score = {}, best_score = {}",
+            name,
+            score,
+            bs.unwrap_or(-1)
+        );
+    }
 
-    if show_solution {
+    if show_solution || name == "stdin" {
         println!("{}", encode_commands(&ans));
     } else {
         save_solution(LIGHTNING_DIR, name, &ans, score)?;
@@ -1168,8 +1167,21 @@ fn main() -> Result<()> {
             input,
             show_solution,
         } => {
-            let problem = read_input(&input)?;
-            solve_lightning(&get_problem_name(&input), &problem, show_solution)?;
+            let (con, file) = if let Some(file) = input {
+                let mut s = String::new();
+                let _ = File::open(&file)?.read_to_string(&mut s)?;
+                (s.trim().to_string(), file.clone())
+            } else {
+                let mut s = String::new();
+                let _ = std::io::stdin().read_to_string(&mut s)?;
+                (
+                    s.trim().to_string(),
+                    PathBuf::from_str("./prob-stdin.desc")?,
+                )
+            };
+
+            let problem = parse_input(&con)?;
+            solve_lightning(&get_problem_name(&file), &problem, show_solution)?;
         }
         Opt::Pack => {
             let dir = LIGHTNING_DIR;
