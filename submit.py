@@ -84,13 +84,13 @@ def main():
         sys.exit('SERVER ERROR: %s' % body)
 
     verified_score = result['score']
-    last_min_score = result['lastMinScore']
-    if last_min_score == 0:
+    last_best_score = result['lastBestScore']
+    if last_best_score == 0:
         print('OK: Congrats! Submitted the first solution for %s with score %d' % (options.problem, verified_score))
-    elif verified_score < last_min_score:
-        print('OK: Congrats! Updated the best score of %s to %d (was: %d)' % (options.problem, verified_score, last_min_score))
+    elif verified_score < last_best_score:
+        print('OK: Congrats! Updated the best score of %s to %d (was: %d)' % (options.problem, verified_score, last_best_score))
     else:
-        print('OK: Could not update the best score of %s: yours %d, best %d' % (options.problem, verified_score, last_min_score))
+        print('OK: Could not update the best score of %s: yours %d, best %d' % (options.problem, verified_score, last_best_score))
 
 
 if __name__ == '__main__':
