@@ -49,7 +49,8 @@ if __name__ == '__main__':
     except ValueError:
         parser.error('Port must be an integer.')
 
-    server = Server(f'http://{args.bind}:{args.port}')
+    server = Server("http://{}:{}".format(args.bind, args.port))
+    # server = Server(f'http://{args.bind}:{args.port}')
 
     # Handle getblockinfo
     if args.subcmd == 'getblockinfo':
