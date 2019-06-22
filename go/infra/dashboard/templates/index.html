@@ -9,6 +9,7 @@
     <th scope="col">Steps</th>
     <th scope="col">Solver</th>
     <th scope="col">Time</th>
+    <th scope="col"></th>
   </tr>
   </thead>
   <tbody>
@@ -18,6 +19,7 @@
       <td>{{ .Score }}</td>
       <td>{{ .Solver }}</td>
       <td>{{ (localTime .Submitted).Format "2006-01-02 15:04:05" }}</td>
+      <td><a href="/static/sim.html?problem={{ .Problem }}">Solve Manually</a></td>
     </tr>
   {{ end }}
   </tbody>
