@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"database/sql"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +14,9 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/julienschmidt/httprouter"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/nya3jp/icfpc2019/go/infra/concurrent"
 )
 
 type handler struct {
@@ -24,6 +29,7 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	r := httprouter.New()
 	r.Handle("GET", "/dashboard", h.handleIndex)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
+	r.Handle("GET", "/dashboard/zip", h.handleZip)
 	r.ServeFiles("/static/*filepath", http.Dir("infra/dashboard/static"))
 	return r
 }
@@ -123,6 +129,66 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			BestSolution: bs,
 		}
 		return problemTmpl.Execute(w, v)
+	})
+}
+
+func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	handle(w, r, func(ctx context.Context) error {
+		ss, err := h.queryBestSolutions(ctx)
+		if err != nil {
+			return err
+		}
+
+		type entry struct {
+			problem, solution string
+		}
+
+		ch := make(chan *entry, len(ss))
+
+		g, ctx := errgroup.WithContext(context.Background())
+		lim := concurrent.NewLimit(10)
+		for _, s := range ss {
+			s := s
+			g.Go(func() error {
+				defer lim.Use(1)()
+				obj := h.cl.Bucket("sound-type-system").Object(fmt.Sprintf("solutions/%d/solution.txt", s.ID))
+				r, err := obj.NewReader(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to open %s: %v", obj.ObjectName(), err)
+				}
+				defer r.Close()
+				b, err := ioutil.ReadAll(r)
+				if err != nil {
+					return fmt.Errorf("failed to read %s: %v", obj.ObjectName(), err)
+				}
+				ch <- &entry{
+					problem:  s.Problem,
+					solution: string(b),
+				}
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return err
+		}
+
+		close(ch)
+
+		now := time.Now().In(jst)
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"submission-%s.zip\"", now.Format("20060102-150405")))
+		z := zip.NewWriter(w)
+		defer z.Close()
+
+		for e := range ch {
+			g, err := z.Create(fmt.Sprintf("%s.sol", e.problem))
+			if err != nil {
+				return err
+			}
+			g.Write([]byte(e.solution))
+		}
+		return nil
 	})
 }
 

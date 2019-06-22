@@ -11,8 +11,9 @@ namespace Yuizumi.Icfpc2019
 
         private readonly char[,] mCells;
 
-        public const char Free = '.';
+        public const char Free = ' ';
         public const char Wall = '#';
+        public const char Done = '.';
 
         public int XSize => mCells.GetLength(0);
         public int YSize => mCells.GetLength(1);
