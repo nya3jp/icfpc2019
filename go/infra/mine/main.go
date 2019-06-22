@@ -24,6 +24,8 @@ import (
 
 const bucket = "sound-type-system"
 
+const slackURL = "https://hooks.slack.com/services/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"
+
 var apiKey string
 
 type args struct {
@@ -67,6 +69,7 @@ func main() {
 
 		return doMain(ctx, cl, args.block, args.submit)
 	}(); err != nil {
+		logf("ERROR: %v", err)
 		panic(fmt.Sprint("ERROR: ", err))
 	}
 }
@@ -91,14 +94,18 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 	go func() {
 		puzzle, err := runPuzzlers(runCtx, cl, puzzlers, block)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to run puzzler: %v\n", err)
+			logf("ERROR: Failed to run puzzler: %v", err)
+		} else {
+			logf("Selected puzzle solution: %s", puzzle)
 		}
 		puzzleCh <- puzzle
 	}()
 	go func() {
 		task, err := runTaskers(runCtx, cl, taskers, block)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to run tasker: %v\n", err)
+			logf("ERROR: Failed to run tasker: %v", err)
+		} else {
+			logf("Selected task solution: %s", task)
 		}
 		taskCh <- task
 	}()
@@ -106,7 +113,6 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 	puzzle := <-puzzleCh
 	task := <-taskCh
 
-	fmt.Fprintf(os.Stderr, "Submitting:\nPuzzle=%s\nTask=%s\n", puzzle, task)
 	if !toSubmit {
 		return nil
 	}
@@ -114,6 +120,8 @@ func doMain(ctx context.Context, cl *storage.Client, block int, toSubmit bool) e
 	if puzzle == "" || task == "" {
 		return errors.New("not submitting")
 	}
+
+	log("Submitting")
 
 	return submit(ctx, block, puzzle, task)
 }
@@ -161,10 +169,10 @@ func runPuzzlers(ctx context.Context, cl *storage.Client, puzzlers []string, blo
 		select {
 		case r := <-ch:
 			if r.err == nil {
-				fmt.Fprintf(os.Stderr, "Puzzler %s passed\n", r.name)
+				logf("Puzzler %s passed: %s", r.name, r.solution)
 				return r.solution, nil
 			}
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to run puzzler %s: %v\n", r.name, r.err)
+			logf("ERROR: Failed to run puzzler %s: %v", r.name, r.err)
 			done++
 		case <-ctx.Done():
 			return "", fmt.Errorf("no puzzler passed before deadline: %v", ctx.Err())
@@ -187,7 +195,7 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/puzzlers/%s/", bucket, block, name),
 	}
-	fmt.Fprintf(os.Stderr, "Running puzzler %s\n", name)
+	logf("Running puzzler %s", name)
 	if err := runTask(ctx, t); err != nil {
 		return "", err
 	}
@@ -226,9 +234,9 @@ loop:
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				fmt.Fprintf(os.Stderr, "ERROR: Failed to run tasker %s: %v\n", r.name, r.err)
+				logf("ERROR: Failed to run tasker %s: %v", r.name, r.err)
 			} else {
-				fmt.Fprintf(os.Stderr, "Tasker %s passed with score %d\n", r.name, r.score)
+				logf("Tasker %s passed with score %d: %s", r.name, r.score, r.solution)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -259,7 +267,7 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/taskers/%s/", bucket, block, name),
 	}
-	fmt.Fprintf(os.Stderr, "Running tasker %s\n", name)
+	logf("Running tasker %s", name)
 	if err := runTask(ctx, t); err != nil {
 		return "", 0, err
 	}
@@ -361,4 +369,24 @@ type task struct {
 type pkg struct {
 	URL  string `json:"url"`
 	Dest string `json:"dest,omitempty"`
+}
+
+func log(args ...interface{}) {
+	msg := fmt.Sprint(args...)
+	go postToSlack(msg)
+}
+
+func logf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	go postToSlack(msg)
+}
+
+func postToSlack(text string) error {
+	req := map[string]string{"text": text}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	_, err = http.Post(slackURL, "application/json", bytes.NewReader(data))
+	return err
 }
