@@ -37,7 +37,29 @@ enum Opt {
 type Pos = (i64, i64);
 
 // const VECT: &[Pos] = &[(-1, 0), (1, 0), (0, 1), (0, -1)];
-const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
+const VECTS: &[&[Pos]] = &[
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+];
+// const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
@@ -377,7 +399,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i6
     let mut best_score = (0xffffffff, 0xffffffff);
     let mut ret = None;
 
-    for (dx, dy) in VECT.iter() {
+    for &(dx, dy) in VECTS[i].iter() {
         let cx = state.robots[i].x + dx;
         let cy = state.robots[i].y + dy;
 
@@ -389,7 +411,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i6
             continue;
         }
 
-        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, f) {
+        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, f, VECTS[i]) {
             let sc = state.try_move_to(cx, cy, i);
             if (dist, -sc) < best_score {
                 best_score = (dist, -sc);
@@ -401,7 +423,13 @@ fn nearest(state: &State, i: usize, f: impl Fn(u8) -> bool + Copy) -> Option<(i6
     ret
 }
 
-fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, f: impl Fn(u8) -> bool) -> Option<usize> {
+fn nearest_empty_dist(
+    bd: &Vec<Vec<u8>>,
+    x: i64,
+    y: i64,
+    f: impl Fn(u8) -> bool,
+    vect: &[Pos],
+) -> Option<usize> {
     let h = bd.len() as i64;
     let w = bd[0].len() as i64;
 
@@ -416,7 +444,7 @@ fn nearest_empty_dist(bd: &Vec<Vec<u8>>, x: i64, y: i64, f: impl Fn(u8) -> bool)
     close.insert((x, y));
 
     while let Some((cx, cy, dep)) = q.pop_front() {
-        for &(dx, dy) in VECT.iter() {
+        for &(dx, dy) in vect.iter() {
             let nx = cx + dx;
             let ny = cy + dy;
 
@@ -468,7 +496,7 @@ struct Diff {
     bd: Vec<(usize, usize, u8)>,
     x: i64,
     y: i64,
-    items: Vec<usize>,
+    items: Vec<i64>,
     manips: Vec<Pos>,
     rest: usize,
     prios: usize,
@@ -613,7 +641,7 @@ impl State {
                 self.diff.bd.push((tx as usize, ty as usize, prev));
             }
 
-            for &(dx, dy) in VECT.iter() {
+            for &(dx, dy) in VECTS[i].iter() {
                 mark_around.insert((dx + tx, dy + ty));
             }
         }
@@ -628,6 +656,10 @@ impl State {
 
             if item == 6 {
                 self.clone_num -= 1;
+            }
+
+            if item == 1 {
+                eprintln!("**** GET ARM ****");
             }
         }
 
@@ -748,7 +780,7 @@ impl State {
         if self.rest == 0 {
             0
         } else {
-            nearest_empty_dist(&self.bd, self.robots[i].x, self.robots[i].y, f).unwrap()
+            nearest_empty_dist(&self.bd, self.robots[i].x, self.robots[i].y, f, VECTS[i]).unwrap()
         }
     }
 
@@ -844,6 +876,8 @@ fn solve(
 
         let mut items = state.items.clone();
 
+        // eprintln!("### TURN");
+
         for i in 0..robot_num {
             if i == 0 {
                 if state.items[6] > 0 {
@@ -881,7 +915,7 @@ fn solve(
             if aggressive_item {
                 let mut done = false;
                 // 隣にアイテムがあったら拾う
-                for &(dx, dy) in VECT.iter() {
+                for &(dx, dy) in VECTS[i].iter() {
                     let cx = dx + state.robots[i].x;
                     let cy = dy + state.robots[i].y;
                     if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
@@ -920,22 +954,22 @@ fn solve(
             let (nx, ny) = n.unwrap();
 
             // 手が増やせるならとりあえず縦に増やす
-            if items[1] > 0 {
-                items[1] -= 1;
-                state.items[1] -= 1;
+            // if items[1] > 0 {
+            //     items[1] -= 1;
+            //     state.items[1] -= 1;
 
-                for ii in 0.. {
-                    let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
-                    if !state.robots[i].manips.contains(&(1, dy)) {
-                        eprintln!("**** ADD ARM ****");
-                        cmds.push(Command::AttachManip(1, dy));
-                        state.robots[i].manips.push((1, dy));
-                        break;
-                    }
-                }
+            //     for ii in 0.. {
+            //         let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
+            //         if !state.robots[i].manips.contains(&(1, dy)) {
+            //             eprintln!("**** ADD ARM ****");
+            //             cmds.push(Command::AttachManip(1, dy));
+            //             state.robots[i].manips.push((1, dy));
+            //             break;
+            //         }
+            //     }
 
-                continue;
-            }
+            //     continue;
+            // }
 
 
             let dx = nx - state.robots[i].x;
