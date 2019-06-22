@@ -14,6 +14,12 @@ struct Point {
   int x;
   int y;
 
+  friend bool operator==(const Point& lhs, const Point& rhs) {
+    return std::tie(lhs.x, lhs.y) == std::tie(rhs.x, rhs.y);
+  }
+  friend bool operator!=(const Point& lhs, const Point& rhs) {
+    return std::tie(lhs.x, lhs.y) != std::tie(rhs.x, rhs.y);
+  }
   bool operator<(const Point& other) const {
     return std::tie(x, y) < std::tie(other.x, other.y);
   }
@@ -37,6 +43,7 @@ struct Point {
   friend Point operator-(const Point& lhs, const Point& rhs) {
     return {lhs.x - rhs.x, lhs.y - rhs.y};
   }
+
 };
 
 std::ostream& operator<<(std::ostream& os, const Point& point);
@@ -103,6 +110,10 @@ class Wrapper {
     return manipulators_;
   }
 
+  void AddManipulator(const Point& p) {
+    manipulators_.push_back(p);
+  }
+
   void RotateClockwise() {
     for (auto& manip : manipulators_) {
       manip = Point{-manip.y, manip.x};
@@ -115,6 +126,12 @@ class Wrapper {
     }
   }
 
+  int fast_count() const { return fast_count_; }
+  void set_fast_count(int count) { fast_count_ = count; }
+
+  int drill_count() const { return drill_count_; }
+  void set_drill_count(int count) { drill_count_ = count; }
+
  private:
   Point point_;
   std::vector<Point> manipulators_ = {
@@ -122,6 +139,8 @@ class Wrapper {
     {1, 0},
     {1, 1},
   };
+  int fast_count_ = 0;
+  int drill_count_ = 0;
 };
 
 class Map {
@@ -142,6 +161,7 @@ class Map {
   int height() const { return height_; }
 
   int remaining() const { return remaining_; }
+  int num_steps() const { return num_steps_; }
 
   const std::vector<Wrapper>& wrappers() const { return wrappers_; }
 
@@ -157,6 +177,7 @@ class Map {
     return map_[Index(p)];
   }
   void Move(Wrapper* wrapper, const Point& direction);
+  bool MoveInternal(Wrapper* wrapper, const Point& direction);
   void Fill(const Wrapper& wrapper);
 
   std::size_t width_;
@@ -164,8 +185,15 @@ class Map {
   std::vector<Cell> map_;
   std::map<Point, Booster> booster_map_;
 
+  int num_steps_ = 0;
   int remaining_ = 0;
   std::vector<Wrapper> wrappers_;
+
+  int collected_b_ = 0;
+  int collected_f_ = 0;
+  int collected_l_ = 0;
+  int collected_r_ = 0;
+  int collected_c_ = 0;
 };
 
 } // namespace icpfc2019

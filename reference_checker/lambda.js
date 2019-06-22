@@ -1,6 +1,3 @@
-const fs = require('fs');
-const process = require('process');
-
 const DEBUG = false;
 
 function createLoggingProxy(name, target) {
@@ -72,17 +69,7 @@ class FileReader {
   }
 }
 
-async function main() {
-  if (process.argv.length !== 4) {
-    console.error("Usage: nodejs validator.js [task] [solution]");
-    return;
-  }
-
-  const task = fs.readFileSync(process.argv[2]);
-  const solution = fs.readFileSync(process.argv[3]);
-
-  validate();
-
+function check(task, solution) {
   const taskInput = document.getElementById('submit_task');
   taskInput.files = [new Blob(task)];
   taskInput.onchange();
@@ -95,8 +82,10 @@ async function main() {
   button.onclick();
 
   const output = document.getElementById('output');
-  console.log(output.textContent);
+  return output.textContent;
 }
+
+exports.check = check;
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -884,4 +873,4 @@ d.$classData=u({Hv:0},!1,"scala.collection.mutable.ArrayBuffer",{Hv:1,Io:1,Rd:1,
 }).call(this);
 //# sourceMappingURL=graphics-opt.js.map
 
-main();
+validate();

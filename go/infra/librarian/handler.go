@@ -9,13 +9,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 
 	"cloud.google.com/go/storage"
 )
 
 const apiKey = "c868a5215b6bfb6161c6a43363e62d45"
+
+const checkerURL = "https://us-central1-sound-type-system.cloudfunctions.net/check"
 
 type handler struct {
 	mux *http.ServeMux
@@ -54,6 +60,8 @@ type submitRequest struct {
 	Problem  string `json:"problem"`
 	Solution string `json:"solution"`
 	Score    int    `json:"score"`
+
+	solutionHash string
 }
 
 type submitResponse struct {
@@ -81,8 +89,16 @@ func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		if s.Solution == "" {
 			return errors.New("solution must not be empty")
 		}
-		if s.Score == 0 {
-			return errors.New("score must not be empty")
+
+		hash := sha256.Sum256([]byte(s.Solution))
+		s.solutionHash = hex.EncodeToString(hash[:])
+
+		if err := h.checkDup(ctx, &s); err != nil {
+			return err
+		}
+
+		if err := h.validate(ctx, &s); err != nil {
+			return err
 		}
 
 		id, lastBestScore, err := h.submit(ctx, &s)
@@ -99,15 +115,76 @@ func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *handler) checkDup(ctx context.Context, s *submitRequest) error {
+	row := h.db.QueryRowContext(ctx, `
+SELECT 1
+FROM solutions
+WHERE
+  solver = ? AND
+  problem = ? AND
+  solution_hash = ?
+`, s.Solver, s.Problem, s.solutionHash)
+	var i int
+	if err := row.Scan(&i); err == nil {
+		return errors.New("duplicate solution")
+	} else if err != sql.ErrNoRows {
+		return err
+	}
+	return nil
+}
+
+var successRe = regexp.MustCompile(`Success!\s*Your solution took (\d+) time units`)
+
+func (h *handler) validate(ctx context.Context, s *submitRequest) error {
+	// TODO: Cache problems.
+	obj := h.cl.Bucket("sound-type-system").Object(fmt.Sprintf("problems/%s.desc", s.Problem))
+	r, err := obj.NewReader(ctx)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	problem := string(b)
+
+	form := make(url.Values)
+	form.Set("task", problem)
+	form.Set("solution", s.Solution)
+	res, err := http.PostForm(checkerURL, form)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	b, err = ioutil.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	out := string(b)
+
+	m := successRe.FindStringSubmatch(out)
+	if m == nil {
+		return errors.New("solution validation failed")
+	}
+
+	score, err := strconv.Atoi(m[1])
+	if err != nil {
+		return err
+	}
+
+	s.Score = score
+	return nil
+}
+
 func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestScore int, _ error) {
 	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return 0, 0, err
 	}
 	defer tx.Rollback()
-
-	hbin := sha256.Sum256([]byte(s.Solution))
-	hash := hex.EncodeToString(hbin[:])
 
 	row := tx.QueryRowContext(ctx, `
 SELECT IFNULL(MIN(score), 0) FROM solutions WHERE valid AND problem = ?`, s.Problem)
@@ -118,7 +195,7 @@ SELECT IFNULL(MIN(score), 0) FROM solutions WHERE valid AND problem = ?`, s.Prob
 	r, err := tx.ExecContext(ctx, `INSERT INTO solutions
 (solver, problem, evaluator, solution_hash, score)
 VALUES (?, ?, ?, ?, ?)
-`, s.Solver, s.Problem, "none", hash, s.Score)
+`, s.Solver, s.Problem, "none", s.solutionHash, s.Score)
 	if err != nil {
 		return 0, 0, err
 	}
