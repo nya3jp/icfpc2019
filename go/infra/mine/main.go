@@ -62,6 +62,8 @@ func main() {
 
 		apiKey = args.apiKey
 
+		logf("Start mining block %d", args.block)
+
 		cl, err := storage.NewClient(ctx)
 		if err != nil {
 			return err
