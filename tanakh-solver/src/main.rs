@@ -48,6 +48,10 @@ struct SolverOption {
     /// 取ったら即座に F を使う
     #[structopt(long = "aggressive-fast")]
     aggressive_fast: bool,
+
+    /// モップを向ける
+    #[structopt(long = "mop-direction")]
+    mop_direction: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -248,7 +252,7 @@ fn booster2u16(typ: Booster) -> u16 {
     typ as u16
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Command {
     Move(i64, i64),
     Nop,
@@ -1280,6 +1284,17 @@ fn collect_item(state: &mut State, i: usize) {
     }
 }
 
+fn last_command(sol: &Solution, i: usize) -> Option<Command> {
+    if sol.is_empty() {
+        return None;
+    }
+    let lasts = sol.last().unwrap();
+    if lasts.len() <= i {
+        return None;
+    }
+    return Some(lasts[i].clone());
+}
+
 fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
@@ -1341,6 +1356,19 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 // FIXME: cmdがmoveならmoveの処理が必要
                 match &cmd {
                     Command::Turn(b) => state.rotate(*b, i),
+                    Command::Move(dx, dy) => {
+                        let nx = state.robots[i].x + dx;
+                        let ny = state.robots[i].y + dy;
+                        state.move_to(nx, ny, i, true);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = nx + dx;
+                            let nny = ny + dy;
+                            if !state.bd[nny as usize][nnx as usize].is_wall() {
+                                state.move_to(nnx, nny, i, true);
+                            }
+                        }
+                    }
                     _ => unreachable!(),
                 }
                 cmds.push(cmd);
@@ -1589,15 +1617,34 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             // 移動
             if dx.abs() + dy.abs() == 1 {
-                cmds.push(Command::Move(dx, dy));
-                state.move_to(nx, ny, i, true);
-                if state.robots[i].fast_count > 0 {
-                    collect_item(&mut state, i);
-                    let nnx = nx + dx;
-                    let nny = ny + dy;
-                    if 0 <= nnx && nnx < w && 0 <= nny && nny < h &&
-                       !state.bd[nny as usize][nnx as usize].is_wall() {
-                        state.move_to(nnx, nny, i, true);
+                // If the direction was as same as last one, and it's not the
+                // direction of the mop, turn.
+                if opt.mop_direction &&
+                   !state.robots[i].manips.contains(&(dx, dy)) &&
+                   last_command(&ret, i) == Some(Command::Move(dx, dy)) {
+                    if state.robots[i].manips.contains(&(-dx, -dy)) {
+                        cmds.push(Command::Turn(true));
+                        state.rotate(true, i);
+                        state.robots[i].queue.push(Command::Turn(true));
+                    } else if !state.robots[i].manips.contains(&(dy, -dx)) {
+                        cmds.push(Command::Turn(true));
+                        state.rotate(true, i);
+                    } else {
+                        cmds.push(Command::Turn(false));
+                        state.rotate(false, i);
+                    }
+                    state.robots[i].queue.push(Command::Move(dx, dy));
+                } else {
+                    cmds.push(Command::Move(dx, dy));
+                    state.move_to(nx, ny, i, true);
+                    if state.robots[i].fast_count > 0 {
+                        collect_item(&mut state, i);
+                        let nnx = nx + dx;
+                        let nny = ny + dy;
+                        if 0 <= nnx && nnx < w && 0 <= nny && nny < h &&
+                           !state.bd[nny as usize][nnx as usize].is_wall() {
+                            state.move_to(nnx, nny, i, true);
+                        }
                     }
                 }
             } else {
