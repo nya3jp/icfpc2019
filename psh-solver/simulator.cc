@@ -147,9 +147,9 @@ std::vector<Cell> ConvertMap(
   return result;
 }
 
-bool IsVisible(const Point& origin, const Point& target,
-               const std::vector<Cell>& m,
-               std::size_t width, std::size_t height) {
+bool IsVisibleImpl(const Point& origin, const Point& target,
+                   const std::vector<Cell>& m,
+                   std::size_t width, std::size_t height) {
   std::vector<Point> points;
   if (origin.x == target.x) {
     int miny, maxy;
@@ -716,6 +716,10 @@ void Map::RunUnsafe(int index, const Instruction& inst) {
   backlogs_.push_back(std::move(entry));
 }
 
+bool Map::IsVisible(const Point& origin, const Point& target) const {
+    return IsVisibleImpl(origin, target, map_, width_, height_);
+}
+
 std::string Map::ToString() const {
   std::string result;
   for (int y = static_cast<int>(height_) - 1; y >= 0; --y) {
@@ -841,7 +845,7 @@ void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
   }
   for (const auto& manip : wrapper.manipulators()) {
     const auto p = wrapper.point() + manip;
-    if (!IsVisible(wrapper.point(), p, map_, width_, height_)) {
+    if (!IsVisibleImpl(wrapper.point(), p, map_, width_, height_)) {
       continue;
     }
     auto& cell = GetCell(p);

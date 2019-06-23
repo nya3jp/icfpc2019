@@ -1,0 +1,278 @@
+#!/usr/bin/python3
+
+import sys
+from collections import deque
+
+_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+class Grid:
+    def __init__(self, size):
+        self.size = size
+        self.grid = [([' '] * size) for _ in range(size)]
+
+    def contains(self, pos):
+        (x, y) = pos
+        return 0 <= x < self.size and 0 <= y < self.size
+
+    def __getitem__(self, key):
+        if self.contains(key):
+            return self.grid[key[1]][key[0]]
+        return '#'
+
+    def __setitem__(self, key, value):
+        assert self.contains(key)
+        (x, y) = key
+        self.grid[y][x] = value
+
+    def __str__(self):
+        return '\n'.join([''.join(line) for line in self.grid]) + '\n'
+
+
+def _create_polygon(grid, tSize):
+
+    for y in range(tSize):
+        found = False
+        for x in range(tSize):
+            if grid[x, y] != '#':
+                found = True
+                (x0, y0) = (x, y)
+                break
+        if found:
+            break
+
+    (x, y) = (x0, y0)
+    yield (x, y)
+
+    (dx, dy) = (1, 0)
+    while True:
+        if dx > 0:
+            if grid[x, y] == '#':
+                yield (x, y)
+                (dx, dy) = (-dy, dx)
+            elif grid[x, y - 1] != '#':
+                yield (x, y)
+                (dx, dy) = (dy, -dx)
+        elif dy > 0:
+            if grid[x - 1, y] == '#':
+                yield (x, y)
+                (dx, dy) = (-dy, dx)
+            elif grid[x, y] != '#':
+                yield (x, y)
+                (dx, dy) = (dy, -dx)
+        elif dx < 0:
+            if grid[x - 1, y - 1] == '#':
+                yield (x, y)
+                (dx, dy) = (-dy, dx)
+            elif grid[x - 1, y] != '#':
+                yield (x, y)
+                (dx, dy) = (dy, -dx)
+        elif dy < 0:
+            if grid[x, y - 1] == '#':
+                yield (x, y)
+                (dx, dy) = (-dy, dx)
+            elif grid[x - 1, y - 1] != '#':
+                yield (x, y)
+                (dx, dy) = (dy, -dx)
+
+        (x, y) = (x + dx, y + dy)
+        if (x, y) == (x0, y0):
+            return
+
+
+def handle_diagonal(grid, pos0):
+    x, y = pos0
+    diagonals = [(dx, dy) for dx in [-1, 1] for dy in [-1, 1]
+                 if grid[x + dx, y + dy] == '#']
+    assert len(diagonals) <= 1
+    if diagonals == []:
+        return None
+    dx, dy = diagonals[0]
+    for ex, ey in [(dx, 0), (0, dy)]:
+        nx, ny = x + ex, y + ey
+        if (grid[nx, ny] != '.' and
+            grid[nx + ex, ny + ey] != '#' and
+            grid[nx + ex + ex - dx, ny + ey + ey - dy] != '#'):
+            return [(pos0, (ex, ey)), ((nx, ny), None)]
+    assert False
+
+
+def find_goal(grid, pos0):
+    previous = {pos0: None}
+    todo = deque()
+    # Check if already finished.
+    if (grid[pos0] == '#' or
+        any(grid[pos0[0] + dx, pos0[1] + dy] == '#' for dx, dy in _DIRS)):
+        return [(pos0, None)]
+
+    diag = handle_diagonal(grid, pos0)
+    if diag:
+        return diag
+    
+    todo.append(pos0)
+    goal = None
+    while len(todo) > 0:
+        # Assume x0, y0 is diggable and not finished.
+        x0, y0 = todo.popleft()
+        for (dx, dy) in _DIRS:
+            x, y = x0, y0
+            while True:
+                nx, ny = x + dx, y + dy
+                ex, ey = dy, -dx
+                if (nx, ny) in previous:
+                    break
+                if grid[nx, ny] == '.':
+                    # Stop before '.'
+                    break
+
+                # Checks around diagonal #.
+                # Only handle if nx is not in finished position.
+                if not (grid[nx + dx, ny + dy] == '#' or
+                        grid[nx + ex, ny + ey] == '#' or
+                        grid[nx - ex, ny - ey] == '#'):
+                    # If one of diagonal position has #, just stop.
+                    # TODO: relax the condition a bit.
+                    if  (grid[nx + dx + ex, ny + dy + ey] == '#' or
+                         grid[nx + dx - ex, ny + dy - ey] == '#'):
+                        break
+                x, y = nx, ny
+
+                previous[x, y] = ((x0, y0), (dx, dy))
+                if (grid[x + dx, y + dy] == '#' or
+                    grid[x + ex, y + ey] == '#' or
+                    grid[x - ex, y - ey] == '#' or
+                    grid[x - dx, y - dy] == '#'):  # Just in case.
+                    goal = (x, y)
+                    break
+
+                todo.append((x, y))
+            if goal is not None:
+                break
+        if goal is not None:
+            break
+    if goal is None:
+        return None
+    cur = goal
+    result = [(cur, None)]
+    while previous[cur] is not None:
+        result.append(previous[cur])
+        cur = previous[cur][0]
+    result.reverse()
+    return result
+                    
+
+def dig(grid, oSqs):
+    def by_outer(pos):
+        return min(pos[0], grid.size - 1 - pos[0],
+                   pos[1], grid.size - 1 - pos[1])
+    
+    for (x0, y0) in sorted(oSqs, key = by_outer):
+        if grid[x0, y0] != '*':  # Already connected.
+            continue
+        path = find_goal(grid, (x0, y0))
+        if path is None:
+            sys.stderr.write('{}\n'.format((x0, y0)))
+            continue
+        if len(path) == 1:
+            grid[path[0][0]] = '#'
+        else:
+            for i in range(1, len(path)):
+                x, y = path[i - 1][0]
+                dx, dy = path[i - 1][1]
+                x1, y1 = path[i][0]
+                while (x, y) != (x1, y1):
+                    grid[x, y] = '#'
+                    x += dx
+                    y += dy
+                    # Also mark * around.
+                    # This is to avoid #*# issue.
+                    for ex, ey in _DIRS:
+                        if grid[x + ex, y + ey] == '*':
+                            grid[x + ex, y + ey] = '#'
+                grid[x1, y1] = '#'
+                continue
+
+        
+def main():
+    head, iSqs, oSqs = input().rstrip().split('#')
+    bNum, eNum, tSize, vMin, vMax, mNum, fNum, dNum, rNum, cNum, xNum = (
+        map(int, head.split(',')))
+    iSqs = {tuple(map(int, s.split(','))) for s in iSqs[1:-1].split('),(')}
+    oSqs = {tuple(map(int, s.split(','))) for s in oSqs[1:-1].split('),(')}
+
+    grid = Grid(tSize)
+
+    for y in range(tSize):
+        for x in range(tSize):
+            if (x, y) in iSqs: grid[x, y] = '.'
+            if (x, y) in oSqs: grid[x, y] = '*'
+
+    #sys.stdout.write('start\n')
+    #sys.stdout.write(str(grid))
+    dig(grid, oSqs)
+    #sys.stdout.write('dig\n')
+    #sys.stdout.write(str(grid))
+
+    v = len(list(_create_polygon(grid, tSize)))
+    #sys.stdout.write('poly:%d\n' % v)
+    
+    for y in range(tSize):
+        for x in range(tSize):
+            if v >= vMin:
+                break
+            if grid[x, y] != ' ':
+                continue
+            count = 0
+            for dy in [-1, 0, 1]:
+                for dx in [-1, 0, 1]:
+                    if grid[x + dx, y + dy] == '#':
+                        count += 1
+            if count == 3:
+                grid[x, y] = '#'
+                v += 4
+
+    polygon = ','.join(f'({x},{y})' for x, y in _create_polygon(grid, tSize))
+    wrappy = None
+    boosters = []
+
+    for y in range(tSize):
+        for x in range(tSize):
+            if grid[x, y] != ' ':
+                continue
+            wrappy = f'({x},{y})'
+
+    for y in range(tSize):
+        for x in range(tSize):
+            if grid[x, y] != ' ':
+                continue
+            if mNum > 0:
+                boosters.append(f'B({x},{y})')
+                mNum -= 1
+                continue
+            if fNum > 0:
+                boosters.append(f'F({x},{y})')
+                fNum -= 1
+                continue
+            if dNum > 0:
+                boosters.append(f'L({x},{y})')
+                dNum -= 1
+                continue
+            if rNum > 0:
+                boosters.append(f'R({x},{y})')
+                rNum -= 1
+                continue
+            if cNum > 0:
+                boosters.append(f'C({x},{y})')
+                cNum -= 1
+                continue
+            if xNum > 0:
+                boosters.append(f'X({x},{y})')
+                xNum -= 1
+                continue
+            break
+
+    boosters = ';'.join(boosters)
+    sys.stdout.write(f'{polygon}#{wrappy}##{boosters}')
+
+
+if __name__ == '__main__':
+    main()

@@ -42,6 +42,18 @@ struct SolverOption {
     /// ドリルを使う
     #[structopt(short = "E", long = "use-drill")]
     use_drill: bool,
+
+    /// 0 以外も C を取りに行く && 産み落とす
+    #[structopt(long = "spawn-delegate")]
+    spawn_delegate: bool,
+
+    /// 取ったら即座に F を使う
+    #[structopt(long = "aggressive-fast")]
+    aggressive_fast: bool,
+
+    /// モップを向ける
+    #[structopt(long = "mop-direction")]
+    mop_direction: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -242,7 +254,7 @@ fn booster2u16(typ: Booster) -> u16 {
     typ as u16
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Command {
     Move(i64, i64),
     Nop,
@@ -709,6 +721,7 @@ struct RobotState {
     drill_time: usize,
     queue: Vec<Command>,
     vect: Vec<Pos>,
+    fast_count: usize,
 }
 
 struct State {
@@ -719,6 +732,8 @@ struct State {
     clone_num: usize,
     portal_num: usize,
     portals: Vec<Pos>,
+
+    spawn_bot: Option<usize>,
 
     hist: Vec<Diff>,
     diff: Diff,
@@ -783,6 +798,7 @@ impl State {
             clone_num,
             portal_num,
             portals: vec![],
+            spawn_bot: None,
 
             hist: vec![],
             diff: Diff::default(),
@@ -808,6 +824,7 @@ impl State {
             drill_time: 0,
             queue: vec![],
             vect,
+            fast_count: 0,
         });
     }
 
@@ -1202,6 +1219,96 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
+fn find_x_closest_bot(state: &State) -> Option<usize> {
+    let h = state.bd.len() as i64;
+    let w = state.bd[0].len() as i64;
+    let bd = &state.bd;
+
+    let mut q = VecDeque::new();
+    let mut visited = HashSet::new();
+    for y in 0..bd.len() {
+        for x in 0..bd[y].len() {
+            if bd[y][x].item() == Some(4) {
+                q.push_back((x as i64, y as i64));
+                visited.insert((x as i64, y as i64));
+            }
+        }
+    }
+
+    let mut goal = HashMap::new();
+    for i in 0..state.robots.len() {
+        // TODO check if robot is capturing C.
+        goal.insert((state.robots[i].x as i64, state.robots[i].y as i64), i);
+    }
+    if goal.is_empty() {
+        return None;
+    }
+    let goal = goal;
+    let vect = &VECTS1[0];
+
+    loop {
+        if q.is_empty() {
+            return None;
+        }
+        let (cx, cy) = q.pop_front().unwrap();
+        if let Some(&i) = goal.get(&(cx, cy)) {
+            return Some(i);
+        }
+
+        for &(dx, dy) in vect.iter() {
+            let nx = cx + dx;
+            let ny = cy + dy;
+
+            if nx < 0 || w <= nx || ny < 0 || h <= ny {
+                // Out of map.
+                continue;
+            }
+            if bd[ny as usize][nx as usize].is_wall() {
+                continue;
+            }
+            if visited.contains(&(nx, ny)) {
+                continue;
+            }
+            visited.insert((nx, ny));
+            q.push_back((nx, ny));
+        }
+    }
+}
+
+fn collect_item(state: &mut State, i: usize) {
+    let x = state.robots[i].x as usize;
+    let y = state.robots[i].y as usize;
+    if let Some(item) = state.bd[y][x].item() {
+        if item != 4 {
+            // Not X.
+            state.diff.bd.push((x, y, state.bd[y][x]));
+            state.items[item] += 1;
+            state.bd[y][x].set_item(None);
+
+            // note: clone_numはXがいないと0になってる。
+            if item == 6 && state.clone_num > 0 {
+                state.clone_num -= 1;
+            }
+
+            if item == 5 {
+                state.portal_num -= 1;
+                state.robots[i].num_collected_portal += 1;
+            }
+        }
+    }
+}
+
+fn last_command(sol: &Solution, i: usize) -> Option<Command> {
+    if sol.is_empty() {
+        return None;
+    }
+    let lasts = sol.last().unwrap();
+    if lasts.len() <= i {
+        return None;
+    }
+    return Some(lasts[i].clone());
+}
+
 fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
@@ -1256,29 +1363,10 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
             // }
 
             // アイテム取得処理
-            if let Some(item) =
-                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
-            {
-                if item != 4 {
-                    // Not X.
-                    state.diff.bd.push((
-                        state.robots[i].x as usize,
-                        state.robots[i].y as usize,
-                        state.bd[state.robots[i].y as usize][state.robots[i].x as usize],
-                    ));
-                    state.items[item] += 1;
-                    state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_item(None);
+            collect_item(&mut state, i);
 
-                    // note: clone_numはXがいないと0になってる。
-                    if item == 6 && state.clone_num > 0 {
-                        state.clone_num -= 1;
-                    }
-
-                    if item == 5 {
-                        state.portal_num -= 1;
-                        state.robots[i].num_collected_portal += 1;
-                    }
-                }
+            if state.robots[i].fast_count > 0 {
+                state.robots[i].fast_count -= 1;
             }
 
             // キューに命令が詰まっていたらとりあえずそれをこなす
@@ -1287,7 +1375,17 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 match &cmd {
                     Command::Turn(b) => state.rotate(*b, i),
                     Command::Move(dx, dy) => {
-                        state.move_to(state.robots[i].x + dx, state.robots[i].y + dy, i, true)
+                        let nx = state.robots[i].x + dx;
+                        let ny = state.robots[i].y + dy;
+                        state.move_to(nx, ny, i, true);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = nx + dx;
+                            let nny = ny + dy;
+                            if !state.bd[nny as usize][nnx as usize].is_wall() {
+                                state.move_to(nnx, nny, i, true);
+                            }
+                        }
                     }
                     _ => unreachable!(),
                 }
@@ -1295,60 +1393,94 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            // ロボット0号はクローンの種があるならそれを取りに行って、
-            // それからXに向かってクローンを作る
-            if i == 0 {
-                if state.items[6] > 0 {
-                    if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
-                        == Some(4)
-                    {
-                        // eprintln!("*****CLONE*****");
+            if state.items[6] > 0 && state.spawn_bot == None {
+                if opt.spawn_delegate {
+                    state.spawn_bot = find_x_closest_bot(&state);
+                } else {
+                    state.spawn_bot = Some(0);
+                }
+            }
 
-                        cmds.push(Command::Clone);
-                        state.add_robot(state.robots[i].x, state.robots[i].y);
+            if Some(i) == state.spawn_bot {
+                if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+                    == Some(4)
+                {
+                    // eprintln!("*****CLONE*****");
 
-                        if opt.change_clone_dir {
-                            let new_robot_id = state.robots.len() - 1;
-                            match new_robot_id % 4 {
-                                0 => {}
-                                1 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                }
-                                2 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                }
-                                3 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(false));
-                                }
-                                _ => unreachable!(),
+                    cmds.push(Command::Clone);
+                    state.add_robot(state.robots[i].x, state.robots[i].y);
+
+                    if opt.change_clone_dir {
+                        let new_robot_id = state.robots.len() - 1;
+                        match new_robot_id % 4 {
+                            0 => {}
+                            1 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
+                            }
+                            2 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
+                            }
+                            3 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(false));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+
+                    state.items[6] -= 1;
+                    if state.items[6] == 0 {
+                        state.spawn_bot = None;
+                    }
+                } else {
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap().0;
+                    let dx = nx - state.robots[i].x;
+                    let dy = ny - state.robots[i].y;
+                    if dx.abs() + dy.abs() == 1 {
+                        cmds.push(Command::Move(dx, dy));
+                        state.move_to(nx, ny, i, false);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = nx + dx;
+                            let nny = ny + dy;
+                            if !state.bd[nny as usize][nnx as usize].is_wall() {
+                                state.move_to(nnx, nny, i, false);
                             }
                         }
-
-                        state.items[6] -= 1;
                     } else {
-                        let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap().0;
-                        let dx = nx - state.robots[i].x;
-                        let dy = ny - state.robots[i].y;
-                        if dx.abs() + dy.abs() == 1 {
-                            cmds.push(Command::Move(dx, dy));
-                        } else {
-                            cmds.push(Command::Teleport(nx, ny));
-                        }
+                        cmds.push(Command::Teleport(nx, ny));
                         state.move_to(nx, ny, i, false);
                     }
-                    continue;
-                } else if state.clone_num > 0 {
+                }
+                continue;
+            }
+
+            if i == 0 {
+                if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
                         cmds.push(Command::Move(dx, dy));
+                        state.move_to(nx, ny, i, false);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = nx + dx;
+                            let nny = ny + dy;
+                            if 0 <= nnx
+                                && nnx < w
+                                && 0 <= nny
+                                && nny < h
+                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                            {
+                                state.move_to(nnx, nny, i, false);
+                            }
+                        }
                     } else {
                         cmds.push(Command::Teleport(nx, ny));
+                        state.move_to(nx, ny, i, false);
                     }
-                    state.move_to(nx, ny, i, false);
                     continue;
                 }
                 if opt.aggressive_teleport
@@ -1360,10 +1492,24 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
                         cmds.push(Command::Move(dx, dy));
+                        state.move_to(nx, ny, i, false);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = nx + dx;
+                            let nny = ny + dy;
+                            if 0 <= nnx
+                                && nnx < w
+                                && 0 <= nny
+                                && nny < h
+                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                            {
+                                state.move_to(nnx, nny, i, false);
+                            }
+                        }
                     } else {
                         cmds.push(Command::Teleport(nx, ny));
+                        state.move_to(nx, ny, i, false);
                     }
-                    state.move_to(nx, ny, i, false);
                     continue;
                 }
             }
@@ -1379,9 +1525,26 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     }
                     let item = state.bd[cy as usize][cx as usize].item();
                     // 使える奴だけ
-                    if item == Some(1) || item == Some(3) && item == Some(5) {
-                        state.move_to(cx, cy, i, true);
+                    if item == Some(1)
+                        || item == Some(5)
+                        || (opt.aggressive_fast && item == Some(2))
+                        || (opt.use_drill && item == Some(3))
+                    {
                         cmds.push(Command::Move(dx, dy));
+                        state.move_to(cx, cy, i, true);
+                        if state.robots[i].fast_count > 0 {
+                            collect_item(&mut state, i);
+                            let nnx = cx + dx;
+                            let nny = cy + dy;
+                            if 0 <= nnx
+                                && nnx < w
+                                && 0 <= nny
+                                && nny < h
+                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                            {
+                                state.move_to(nnx, nny, i, true);
+                            }
+                        }
                         done = true;
                         break;
                     }
@@ -1435,6 +1598,13 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     }
                     continue;
                 }
+            }
+
+            if opt.aggressive_fast && state.robots[i].fast_count == 0 && state.items[2] > 0 {
+                cmds.push(Command::AttachWheel);
+                state.items[2] -= 1;
+                state.robots[i].fast_count = 51; // Containing this turn.
+                continue;
             }
 
             // 塗ってないところに移動する
@@ -1502,7 +1672,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
 
                 if let Some((tx, ty)) = found {
-                    dbg!("*** USE DRILL ***");
+                    // dbg!("*** USE DRILL ***");
 
                     state.items[3] -= 1;
                     cmds.push(Command::StartDrill);
@@ -1550,11 +1720,45 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             // 移動
             if dx.abs() + dy.abs() == 1 {
-                cmds.push(Command::Move(dx, dy));
+                // If the direction was as same as last one, and it's not the
+                // direction of the mop, turn.
+                if opt.mop_direction
+                    && !state.robots[i].manips.contains(&(dx, dy))
+                    && last_command(&ret, i) == Some(Command::Move(dx, dy))
+                {
+                    if state.robots[i].manips.contains(&(-dx, -dy)) {
+                        cmds.push(Command::Turn(true));
+                        state.rotate(true, i);
+                        state.robots[i].queue.push(Command::Turn(true));
+                    } else if !state.robots[i].manips.contains(&(dy, -dx)) {
+                        cmds.push(Command::Turn(true));
+                        state.rotate(true, i);
+                    } else {
+                        cmds.push(Command::Turn(false));
+                        state.rotate(false, i);
+                    }
+                    state.robots[i].queue.push(Command::Move(dx, dy));
+                } else {
+                    cmds.push(Command::Move(dx, dy));
+                    state.move_to(nx, ny, i, true);
+                    if state.robots[i].fast_count > 0 {
+                        collect_item(&mut state, i);
+                        let nnx = nx + dx;
+                        let nny = ny + dy;
+                        if 0 <= nnx
+                            && nnx < w
+                            && 0 <= nny
+                            && nny < h
+                            && !state.bd[nny as usize][nnx as usize].is_wall()
+                        {
+                            state.move_to(nnx, nny, i, true);
+                        }
+                    }
+                }
             } else {
                 cmds.push(Command::Teleport(nx, ny));
+                state.move_to(nx, ny, i, true);
             }
-            state.move_to(nx, ny, i, true);
         }
 
         // state.dump();
