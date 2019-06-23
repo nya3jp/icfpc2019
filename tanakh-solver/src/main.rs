@@ -1055,7 +1055,8 @@ fn solve(
                     state.items[item] += 1;
                     state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_item(None);
 
-                    if item == 6 {
+                    // note: clone_numはXがいないと0になってる。
+                    if item == 6 && state.clone_num > 0 {
                         state.clone_num -= 1;
                     }
 
