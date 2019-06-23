@@ -58,6 +58,7 @@ func handle(w http.ResponseWriter, r *http.Request, f func(context.Context) erro
 type submitRequest struct {
 	Solver   string `json:"solver"`
 	Problem  string `json:"problem"`
+	Purchase string `json:"purchase"`
 	Solution string `json:"solution"`
 	Score    int    `json:"score"`
 
@@ -85,6 +86,9 @@ func (h *handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.Problem == "" {
 			return errors.New("problem must not be empty")
+		}
+		if err := validatePurchase(s.Purchase); err != nil {
+			return err
 		}
 		if s.Solution == "" {
 			return errors.New("solution must not be empty")
@@ -122,8 +126,9 @@ FROM solutions
 WHERE
   solver = ? AND
   problem = ? AND
+  purchase = ? AND
   solution_hash = ?
-`, s.Solver, s.Problem, s.solutionHash)
+`, s.Solver, s.Problem, s.Purchase, s.solutionHash)
 	var i int
 	if err := row.Scan(&i); err == nil {
 		return errors.New("duplicate solution")
@@ -153,6 +158,7 @@ func (h *handler) validate(ctx context.Context, s *submitRequest) error {
 	form := make(url.Values)
 	form.Set("task", problem)
 	form.Set("solution", s.Solution)
+	form.Set("purchase", s.Purchase)
 	res, err := http.PostForm(checkerURL, form)
 	if err != nil {
 		return err
@@ -187,15 +193,15 @@ func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestSco
 	defer tx.Rollback()
 
 	row := tx.QueryRowContext(ctx, `
-SELECT IFNULL(MIN(score), 0) FROM solutions WHERE valid AND problem = ?`, s.Problem)
+SELECT IFNULL(MIN(score), 0) FROM solutions WHERE valid AND problem = ? AND purchase = ?`, s.Problem, s.Purchase)
 	if err := row.Scan(&lastBestScore); err != nil {
 		return 0, 0, err
 	}
 
 	r, err := tx.ExecContext(ctx, `INSERT INTO solutions
-(solver, problem, evaluator, solution_hash, score)
-VALUES (?, ?, ?, ?, ?)
-`, s.Solver, s.Problem, "none", s.solutionHash, s.Score)
+(solver, problem, purchase, evaluator, solution_hash, score)
+VALUES (?, ?, ?, ?, ?, ?)
+`, s.Solver, s.Problem, s.Purchase, "none", s.solutionHash, s.Score)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -226,4 +232,27 @@ VALUES (?, ?, ?, ?, ?)
 	}
 
 	return id, lastBestScore, nil
+}
+
+var validBoosters = map[rune]struct{}{
+	'B': {},
+	'F': {},
+	'L': {},
+	'R': {},
+	'C': {},
+}
+
+func validatePurchase(purchase string) error {
+	for _, c := range purchase {
+		if _, ok := validBoosters[c]; !ok {
+			return fmt.Errorf("invalid purchase %c", c)
+		}
+	}
+	for i := 0; i+1 < len(purchase); i++ {
+		a, b := purchase[i], purchase[i+1]
+		if a > b {
+			return errors.New("purchase must be sorted")
+		}
+	}
+	return nil
 }
