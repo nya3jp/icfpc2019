@@ -1532,10 +1532,9 @@ fn solve_lightning(
         bought_boosters,
         solver_option,
     );
-    eprintln!("Score: {}, (options: {:?})", ans.len(), solver_option);
 
     let score = ans.len() as i64;
-    // eprintln!("Score: {}", score);
+    eprintln!("Score: {}, (options: {:?})", score, solver_option);
 
     if name != "stdin" {
         let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
