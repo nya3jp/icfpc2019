@@ -15,5 +15,6 @@ cc_library(
   hdrs = [
       "geometry.h",
       "intersection.h",
+      "mine.h",
   ],
 )
