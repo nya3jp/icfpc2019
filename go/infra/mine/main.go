@@ -87,7 +87,7 @@ type miner struct {
 }
 
 func (m *miner) Run(ctx context.Context) error {
-	m.l.Logf("Start mining block %d", m.args.block)
+	m.l.Logf("Start mining block %d (<https://storage.googleapis.com/%s/blocks/%d/task.desc|Task Description>, <https://storage.googleapis.com/%s/blocks/%d/puzzle.cond|Puzzle Condition>)", m.args.block, bucket, m.args.block, bucket, m.args.block)
 
 	// TODO: Check timestamp.
 	runCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -186,10 +186,10 @@ func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ 
 		select {
 		case r := <-ch:
 			if r.err == nil {
-				m.l.Logf("Puzzle solver %s passed in %v (<https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt|Output>)", r.name, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
+				m.l.Logf("Puzzle solver %s passed in %v (<https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt|Solution>)", r.name, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
 				return r.name, r.solution, nil
 			}
-			m.l.Logf("Warning: Failed to run the puzzle solver %s: %v", r.name, r.err)
+			m.l.Logf("Warning: Failed to run the puzzle solver %s: %v (<https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt|Solution>, https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/validation.txt|Validation>)", r.name, r.err, bucket, m.args.block, r.name, bucket, m.args.block, r.name)
 			done++
 		case <-ctx.Done():
 			return "", "", fmt.Errorf("no puzzle solver passed before deadline: %v", ctx.Err())
@@ -260,9 +260,9 @@ loop:
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				m.l.Logf("Warning: Failed to run the task solver %s: %v", r.name, r.err)
+				m.l.Logf("Warning: Failed to run the task solver %s: %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Solution>, <https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Validation>)", r.name, r.err, bucket, m.args.block, r.name, bucket, m.args.block, r.name)
 			} else {
-				m.l.Logf("Task solver %s passed with score %d in %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Output>)", r.name, r.score, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
+				m.l.Logf("Task solver %s passed with score %d in %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Solution>)", r.name, r.score, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
