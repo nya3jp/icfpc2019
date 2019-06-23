@@ -526,7 +526,6 @@ fn nearest_cmd(state: &State, i: usize) -> Option<Command> {
         return None;
     }
 
-
     let (mut tx, mut ty) = found.unwrap();
 
     // let mut route_len = 0;
@@ -545,7 +544,11 @@ fn nearest_cmd(state: &State, i: usize) -> Option<Command> {
 }
 */
 
-fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(i64, i64)> {
+fn nearest(
+    state: &State,
+    i: usize,
+    f: impl Fn(i64, i64, Cell) -> bool + Copy,
+) -> Option<(i64, i64)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -553,7 +556,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
     let orig_y = state.robots[i].y;
     let bd = &state.bd;
 
-    if f(bd[orig_y as usize][orig_x as usize]) {
+    if f(orig_x, orig_y, bd[orig_y as usize][orig_x as usize]) {
         return Some((orig_x, orig_y));
     }
 
@@ -601,7 +604,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
             break None;
         }
         let (cx, cy) = q.pop_front().unwrap();
-        if f(bd[cy as usize][cx as usize]) {
+        if f(cx, cy, bd[cy as usize][cx as usize]) {
             break Some((cx, cy));
         }
 
@@ -1301,7 +1304,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
                         state.items[6] -= 1;
                     } else {
-                        let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
+                        let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap();
                         let dx = nx - state.robots[i].x;
                         let dy = ny - state.robots[i].y;
                         if dx.abs() + dy.abs() == 1 {
@@ -1314,7 +1317,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     continue;
                 } else if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1329,7 +1332,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     && state.portal_num > 0
                     && state.robots[i].num_collected_portal == 0
                 {
-                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1379,7 +1382,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            let n = nearest(&state, i, |c| {
+            let n = nearest(&state, i, |_, _, c| {
                 !c.is_painted()
                     && if state.robots[i].prios > 0 {
                         c.prio() == Some(i)
