@@ -16,6 +16,7 @@ API_KEY = 'c868a5215b6bfb6161c6a43363e62d45'
 
 OP_RE = re.compile(r'[WSADZEQFLRC]|[BT]\(-?\d+,-?\d+\)')
 PROB_RE = re.compile(r'^prob-\d{3}$')
+SOLVER_RE = re.compile(r'^[A-Za-z0-9+-]+$')
 
 
 def _parse_args():
@@ -79,6 +80,9 @@ def main():
 
     if not PROB_RE.search(options.problem):
         raise Exception('Unknown problem name')
+
+    if not SOLVER_RE.search(options.solver):
+        raise Exception('Invalid solver name')
 
     with open(options.solution) as f:
         solution = f.read().strip()
