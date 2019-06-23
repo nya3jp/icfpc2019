@@ -1,10 +1,8 @@
 use chrono::prelude::*;
 use num_rational::Rational;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
 use regex::Regex;
 use std::cmp::{max, min};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -40,6 +38,10 @@ struct SolverOption {
     /// ポータルをクローンの次に優先して取りに行く
     #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
+
+    /// ドリルを使う
+    #[structopt(short = "E", long = "use-drill")]
+    use_drill: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -548,7 +550,7 @@ fn nearest(
     state: &State,
     i: usize,
     f: impl Fn(i64, i64, Cell) -> bool + Copy,
-) -> Option<(i64, i64)> {
+) -> Option<((i64, i64), usize)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -557,7 +559,7 @@ fn nearest(
     let bd = &state.bd;
 
     if f(orig_x, orig_y, bd[orig_y as usize][orig_x as usize]) {
-        return Some((orig_x, orig_y));
+        return Some(((orig_x, orig_y), 0));
     }
 
     let mut q = VecDeque::new();
@@ -633,14 +635,16 @@ fn nearest(
     }
 
     let (mut cx, mut cy) = found.unwrap();
+    let mut dist = 1;
     loop {
         match backtrack.get(&(cx, cy)) {
             Some(&(nx, ny)) => {
                 if nx == orig_x && ny == orig_y {
-                    return Some((cx, cy));
+                    return Some(((cx, cy), dist));
                 }
                 cx = nx;
                 cy = ny;
+                dist += 1;
             }
             None => unreachable!(),
         }
@@ -702,6 +706,7 @@ struct RobotState {
     manips: Vec<Pos>,
     prios: usize,
     num_collected_portal: usize,
+    drill_time: usize,
     queue: Vec<Command>,
     vect: Vec<Pos>,
 }
@@ -800,6 +805,7 @@ impl State {
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
             prios: 0,
             num_collected_portal: 0,
+            drill_time: 0,
             queue: vec![],
             vect,
         });
@@ -876,14 +882,7 @@ impl State {
                 continue;
             }
 
-            let mut ok = true;
-            for (px, py) in pass_cells(x, y, tx, ty) {
-                if self.bd[py as usize][px as usize].is_wall() {
-                    ok = false;
-                    break;
-                }
-            }
-            if !ok {
+            if !self.can_see(x, y, tx, ty) {
                 continue;
             }
 
@@ -1063,62 +1062,77 @@ impl State {
     // }
 
     fn overwrap_score(&self, x: i64, y: i64, i: usize) -> i64 {
-        return 0;
+        if true {
+            0
+        } else {
+            let h = self.bd.len() as i64;
+            let w = self.bd[0].len() as i64;
 
-        /*
-        let h = self.bd.len() as i64;
-        let w = self.bd[0].len() as i64;
+            let mut penalty = 0;
 
-        let mut penalty = 0;
+            let manips = self.robots[i].manips.clone();
 
-        let manips = self.robots[i].manips.clone();
+            let mut bodies = BTreeSet::new();
 
-        let mut bodies = BTreeSet::new();
-
-        for &(dx, dy) in manips.iter() {
-            let tx = self.robots[i].x + dx;
-            let ty = self.robots[i].y + dy;
-            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
-                continue;
-            }
-            bodies.insert((tx, ty));
-        }
-
-        for &(dx, dy) in manips.iter() {
-            let tx = x + dx;
-            let ty = y + dy;
-            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
-                continue;
-            }
-
-            let mut ok = true;
-            for (px, py) in pass_cells(x, y, tx, ty) {
-                if self.bd[py as usize][px as usize].is_wall() {
-                    ok = false;
-                    break;
+            for &(dx, dy) in manips.iter() {
+                let tx = self.robots[i].x + dx;
+                let ty = self.robots[i].y + dy;
+                if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                    continue;
                 }
+                bodies.insert((tx, ty));
             }
 
-            if bodies.contains(&(tx, ty)) {
-                penalty += 1;
-                continue;
+            for &(dx, dy) in manips.iter() {
+                let tx = x + dx;
+                let ty = y + dy;
+                if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                    continue;
+                }
+
+                let mut ok = true;
+                for (px, py) in pass_cells(x, y, tx, ty) {
+                    if self.bd[py as usize][px as usize].is_wall() {
+                        ok = false;
+                        break;
+                    }
+                }
+
+                if !ok {
+                    penalty += 3;
+                    continue;
+                }
+
+                if bodies.contains(&(tx, ty)) {
+                    penalty += 1;
+                    continue;
+                }
+
+                if self.bd[ty as usize][tx as usize].is_painted() {
+                    penalty += 3;
+                    continue;
+                }
+
+                // penalty -= 3;
             }
 
-            if !ok {
-                penalty += 4;
-                continue;
-            }
+            penalty
+        }
+    }
 
-            if self.bd[ty as usize][tx as usize].is_painted() {
-                penalty += 4;
-                continue;
-            }
-
-            // penalty -= 4;
+    fn can_see(&self, x1: i64, y1: i64, x2: i64, y2: i64) -> bool {
+        // 8近傍以内は絶対見える
+        if max((x1 - x2).abs(), (y1 - y2).abs()) <= 1 {
+            return !(self.bd[y1 as usize][x1 as usize].is_wall()
+                || self.bd[y2 as usize][x2 as usize].is_wall());
         }
 
-        penalty
-        */
+        for (px, py) in pass_cells(x1, y1, x2, y2) {
+            if self.bd[py as usize][px as usize].is_wall() {
+                return false;
+            }
+        }
+        true
     }
 
     #[allow(dead_code)]
@@ -1224,6 +1238,10 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
         // eprintln!("### TURN");
 
         for i in 0..robot_num {
+            if state.robots[i].drill_time > 0 {
+                state.robots[i].drill_time -= 1;
+            }
+
             // if rand::random::<usize>() % 400 == 0 {
             //     loop {
             //         state.robots[i].vect.shuffle(&mut rand::thread_rng());
@@ -1263,17 +1281,22 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
-            // Queue
+            // キューに命令が詰まっていたらとりあえずそれをこなす
             if let Some(cmd) = state.robots[i].queue.pop() {
-                // FIXME: cmdがmoveならmoveの処理が必要
+                // FIXME: 他のコマンド使う場合は実装が必要
                 match &cmd {
                     Command::Turn(b) => state.rotate(*b, i),
+                    Command::Move(dx, dy) => {
+                        state.move_to(state.robots[i].x + dx, state.robots[i].y + dy, i, true)
+                    }
                     _ => unreachable!(),
                 }
                 cmds.push(cmd);
                 continue;
             }
 
+            // ロボット0号はクローンの種があるならそれを取りに行って、
+            // それからXに向かってクローンを作る
             if i == 0 {
                 if state.items[6] > 0 {
                     if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
@@ -1304,7 +1327,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
                         state.items[6] -= 1;
                     } else {
-                        let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap();
+                        let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap().0;
                         let dx = nx - state.robots[i].x;
                         let dy = ny - state.robots[i].y;
                         if dx.abs() + dy.abs() == 1 {
@@ -1317,7 +1340,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     continue;
                 } else if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1332,7 +1355,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     && state.portal_num > 0
                     && state.robots[i].num_collected_portal == 0
                 {
-                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(5)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(5)).unwrap().0;
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1345,9 +1368,9 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
+            // 隣にアイテムがあったら拾う
             if opt.aggressive_item {
                 let mut done = false;
-                // 隣にアイテムがあったら拾う
                 for &(dx, dy) in state.robots[i].vect.iter() {
                     let cx = dx + state.robots[i].x;
                     let cy = dy + state.robots[i].y;
@@ -1356,7 +1379,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     }
                     let item = state.bd[cy as usize][cx as usize].item();
                     // 使える奴だけ
-                    if item == Some(1) || item == Some(5) {
+                    if item == Some(1) || item == Some(3) && item == Some(5) {
                         state.move_to(cx, cy, i, true);
                         cmds.push(Command::Move(dx, dy));
                         done = true;
@@ -1381,24 +1404,6 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 cmds.push(Command::SetPortal);
                 continue;
             }
-
-            let n = nearest(&state, i, |_, _, c| {
-                !c.is_painted()
-                    && if state.robots[i].prios > 0 {
-                        c.prio() == Some(i)
-                    } else {
-                        true
-                    }
-            });
-            if n.is_none() {
-                if i == 0 {
-                    return ret;
-                }
-                fin = true;
-                cmds.push(Command::Nop);
-                continue;
-            }
-            let (nx, ny) = n.unwrap();
 
             // 手が増やせるならとりあえず縦に増やす
             if opt.increase_mop {
@@ -1432,24 +1437,113 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
+            // 塗ってないところに移動する
+            // 自分担当の優先島があればそこに行く
+
+            let satisfies = |cc: Cell| -> bool {
+                !cc.is_painted()
+                    && !cc.is_wall()
+                    && if state.robots[i].prios > 0 {
+                        cc.prio() == Some(i)
+                    } else {
+                        true
+                    }
+            };
+
+            // let n = nearest(&state, i, |x, y, _| {
+            //     for &(dmx, dmy) in state.robots[i].manips.iter() {
+            //         let mx = x + dmx;
+            //         let my = y + dmy;
+            //         if mx >= 0
+            //             && mx < w
+            //             && my >= 0
+            //             && my < h
+            //             && state.can_see(x, y, mx, my)
+            //             && satisfies(state.bd[my as usize][mx as usize])
+            //         {
+            //             return true;
+            //         }
+            //     }
+            //     false
+            // });
+
+            let n = nearest(&state, i, |_, _, cc| satisfies(cc));
+
+            if n.is_none() {
+                if i == 0 {
+                    return ret;
+                }
+                fin = true;
+                cmds.push(Command::Nop);
+                continue;
+            }
+
+            let ((nx, ny), dist) = n.unwrap();
+
+            if opt.use_drill && dist >= 60 /* TODO: parameterise */ && state.items[3] > 0 {
+                let mut found = None;
+                'outer: for d in 1..=30_i64 {
+                    for j in 0..d {
+                        let ps = [(d - j, -j), (-j, -d + j), (-d + j, j), (j, d - j)];
+                        for &(dx, dy) in ps.iter() {
+                            let xx = state.robots[i].x + dx;
+                            let yy = state.robots[i].y + dy;
+                            if xx >= 0
+                                && xx < w
+                                && yy >= 0
+                                && yy < h
+                                && satisfies(state.bd[yy as usize][xx as usize])
+                            {
+                                found = Some((xx, yy));
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+
+                if let Some((tx, ty)) = found {
+                    dbg!("*** USE DRILL ***");
+
+                    state.items[3] -= 1;
+                    cmds.push(Command::StartDrill);
+                    state.robots[i].drill_time += 30 + 1;
+
+                    let mut cx = state.robots[i].x;
+                    let mut cy = state.robots[i].y;
+                    while (cx, cy) != (tx, ty) {
+                        if cx != tx {
+                            let dx = if cx < tx { 1 } else { -1 };
+                            state.robots[i].queue.push(Command::Move(dx, 0));
+                            cx += dx;
+                        } else {
+                            let dy = if cy < ty { 1 } else { -1 };
+                            state.robots[i].queue.push(Command::Move(0, dy));
+                            cy += dy;
+                        }
+                    }
+                    continue;
+                }
+            }
+
             let dx = nx - state.robots[i].x;
             let dy = ny - state.robots[i].y;
 
             // 移動する方向にモップを回す
+            // バグっているので使わないで
             // let mut rot_cnt = 0;
-            // while !state.manips.contains(&(dx, dy)) {
-            //     state.rotate(true);
+            // while !state.robots[i].manips.contains(&(dx, dy)) {
+            //     state.robots[i].rotate(true);
             //     rot_cnt += 1;
             // }
 
             // if rot_cnt == 0 {
             // } else if rot_cnt == 1 {
-            //     ret.push(Command::Turn(true));
+            //     cmds.push(Command::Turn(true));
             // } else if rot_cnt == 2 {
-            //     ret.push(Command::Turn(true));
-            //     ret.push(Command::Turn(true));
+            //     cmds.push(Command::Turn(true));
+            //     cmds.push(Command::Turn(true));
             // } else {
-            //     ret.push(Command::Turn(false));
+            //     cmds.push(Command::Turn(false));
             // }
 
             // dbg!((rot_cnt, &state.manips));
@@ -1461,8 +1555,6 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 cmds.push(Command::Teleport(nx, ny));
             }
             state.move_to(nx, ny, i, true);
-
-            // eprintln!("{}", &encode_commands(&ret));
         }
 
         // state.dump();
