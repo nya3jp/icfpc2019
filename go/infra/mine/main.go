@@ -253,7 +253,7 @@ loop:
 			if r.err != nil {
 				m.l.Logf("Warning: Failed to run the task solver %s: %v", r.name, r.err)
 			} else {
-				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
+				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
