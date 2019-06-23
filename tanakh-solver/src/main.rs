@@ -21,24 +21,24 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
 #[derive(Debug, StructOpt)]
 struct SolverOption {
-    /// モップのサイズを増やすかどうか
-    #[structopt(long = "increase-mop")]
-    increase_mop: bool,
-
     /// 島のサイズの上限
     #[structopt(long = "island-threshold", default_value = "50")]
     island_size_threshold: i64,
 
+    /// モップのサイズを増やすかどうか
+    #[structopt(short = "A", long = "increase-mop")]
+    increase_mop: bool,
+
     /// クローンされたやつがいろんな方向向くやつ
-    #[structopt(long = "change-clone-dir")]
+    #[structopt(short = "B", long = "change-clone-dir")]
     change_clone_dir: bool,
 
     /// 隣接したアイテムをスルーせずにとる（使えるものだけ）
-    #[structopt(long = "aggressive-item")]
+    #[structopt(short = "C", long = "aggressive-item")]
     aggressive_item: bool,
 
     /// ポータルをクローンの次に優先して取りに行く
-    #[structopt(long = "aggressive-teleport")]
+    #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
 }
 
@@ -1185,13 +1185,7 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
-fn solve(
-    bd_org: &Board,
-    sx: i64,
-    sy: i64,
-    bought_boosters: &str,
-    opt: &SolverOption,
-) -> Solution {
+fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
@@ -1331,7 +1325,10 @@ fn solve(
                     state.move_to(nx, ny, i, false);
                     continue;
                 }
-                if opt.aggressive_teleport && state.portal_num > 0 && state.robots[i].num_collected_portal == 0 {
+                if opt.aggressive_teleport
+                    && state.portal_num > 0
+                    && state.robots[i].num_collected_portal == 0
+                {
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
@@ -1535,8 +1532,7 @@ fn solve_lightning(
         bought_boosters,
         solver_option,
     );
-    eprintln!(
-        "Score: {}, (options: {:?})", ans.len(), solver_option);
+    eprintln!("Score: {}, (options: {:?})", ans.len(), solver_option);
 
     let score = ans.len() as i64;
     // eprintln!("Score: {}", score);
