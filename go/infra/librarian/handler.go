@@ -15,6 +15,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"cloud.google.com/go/storage"
 )
@@ -173,7 +174,7 @@ func (h *handler) validate(ctx context.Context, s *submitRequest) error {
 
 	m := successRe.FindStringSubmatch(out)
 	if m == nil {
-		return errors.New("solution validation failed")
+		return fmt.Errorf("solution validation failed: %s", strings.TrimSpace(out))
 	}
 
 	score, err := strconv.Atoi(m[1])
