@@ -16,6 +16,7 @@
   <thead>
   <tr>
     <th scope="col">Problem</th>
+    <th scope="col">Weight</th>
     <th scope="col">Steps</th>
     {{ if $.Purchase }}
     <th scope="col">Base Steps</th>
@@ -30,6 +31,7 @@
   {{ range .BestSolutions }}
     <tr>
       <td><a href="/dashboard/problem/{{ .Problem }}{{ if $.Purchase }}?purchase={{ $.Purchase }}{{ end }}">{{ .Problem }}</a></td>
+      <td>{{ .Weight }}</td>
       <td>{{ .Score }}</td>
       {{ if $.Purchase }}
       <td>{{ .BaseScore }}</td>

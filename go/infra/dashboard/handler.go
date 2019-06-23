@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,6 +78,7 @@ type solution struct {
 	ID        int
 	Solver    string
 	Problem   string
+	Size      Size
 	Evaluator string
 	Score     int32
 	BaseScore int32
@@ -85,6 +87,10 @@ type solution struct {
 
 func (s *solution) RatioStr() string {
 	return fmt.Sprintf("%.3f", float64(s.BaseScore)/float64(s.Score))
+}
+
+func (s *solution) Weight() int {
+	return int(math.Ceil(1000 * math.Log2(float64(s.Size.Y)*float64(s.Size.Y))))
 }
 
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
@@ -302,6 +308,7 @@ func scanSolutions(rows *sql.Rows) ([]*solution, error) {
 		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
 			return nil, err
 		}
+		s.Size = problemSizes[s.Problem]
 		ss = append(ss, &s)
 	}
 	return ss, nil
