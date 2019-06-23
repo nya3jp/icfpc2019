@@ -1,13 +1,16 @@
 {{ define "content" }}
 
 <h1 class="my-4">
-  Problem: {{ .Problem }}
-  {{ if .Purchase }}
-  (purchasing {{ .Purchase }})
-  {{ else }}
-  (no purchase)
-  {{ end }}
+  Problem: {{ .Problem }} ({{ .Solutions | len }})
 </h1>
+
+<ul class="nav nav-tabs">
+  {{ range $p := .Purchases }}
+    <li class="nav-item">
+      <a class="nav-link {{ if eq $p $.Purchase }}active{{ end }}" href="?purchase={{ $p }}">{{ if $p }}{{ $p }}{{ else }}Base{{ end }}</a>
+    </li>
+  {{ end }}
+</ul>
 
 <table id="player">
   <tr>

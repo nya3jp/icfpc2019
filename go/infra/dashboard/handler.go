@@ -79,7 +79,12 @@ type solution struct {
 	Problem   string
 	Evaluator string
 	Score     int32
+	BaseScore int32
 	Submitted time.Time
+}
+
+func (s *solution) RatioStr() string {
+	return fmt.Sprintf("%.3f", float64(s.BaseScore)/float64(s.Score))
 }
 
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
@@ -87,6 +92,7 @@ var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
 type indexValues struct {
 	Purchase      string
 	BestSolutions []*solution
+	Purchases     []string
 }
 
 func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -98,9 +104,32 @@ func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprout
 			return err
 		}
 
+		bss := ss
+		if purchase != "" {
+			bss, err = h.queryBestSolutions(ctx, "")
+			if err != nil {
+				return err
+			}
+		}
+		smap := make(map[string]*solution)
+		for _, s := range ss {
+			smap[s.Problem] = s
+		}
+		for _, bs := range bss {
+			if s, ok := smap[bs.Problem]; ok {
+				s.BaseScore = bs.Score
+			}
+		}
+
+		ps, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
 		v := &indexValues{
 			Purchase:      purchase,
 			BestSolutions: ss,
+			Purchases:     ps,
 		}
 		return indexTmpl.Execute(w, v)
 	})
@@ -113,6 +142,7 @@ type problemValues struct {
 	Purchase     string
 	Solutions    []*solution
 	BestSolution *solution
+	Purchases    []string
 }
 
 func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -126,6 +156,11 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			return err
 		}
 
+		ps, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
 		var bs *solution
 		if len(ss) > 0 {
 			bs = ss[0]
@@ -135,6 +170,7 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			Purchase:     purchase,
 			Solutions:    ss,
 			BestSolution: bs,
+			Purchases:    ps,
 		}
 		return problemTmpl.Execute(w, v)
 	})
@@ -269,4 +305,28 @@ func scanSolutions(rows *sql.Rows) ([]*solution, error) {
 		ss = append(ss, &s)
 	}
 	return ss, nil
+}
+
+func (h *handler) queryPurchases(ctx context.Context) ([]string, error) {
+	rows, err := h.db.QueryContext(ctx, `
+SELECT DISTINCT
+  purchase
+FROM solutions
+WHERE valid
+ORDER BY purchase ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var purchases []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		purchases = append(purchases, p)
+	}
+	return purchases, nil
 }

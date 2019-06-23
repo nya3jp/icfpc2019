@@ -2,18 +2,25 @@
 
 <h1 class="my-4">
   Best Solutions
-  {{ if .Purchase }}
-  (purchasing {{ .Purchase }})
-  {{ else }}
-  (no purchase)
-  {{ end }}
 </h1>
+
+<ul class="nav nav-tabs">
+  {{ range $p := .Purchases }}
+  <li class="nav-item">
+    <a class="nav-link {{ if eq $p $.Purchase }}active{{ end }}" href="?purchase={{ $p }}">{{ if $p }}{{ $p }}{{ else }}Base{{ end }}</a>
+  </li>
+  {{ end }}
+</ul>
 
 <table class="table table-sm">
   <thead>
   <tr>
     <th scope="col">Problem</th>
     <th scope="col">Steps</th>
+    {{ if $.Purchase }}
+    <th scope="col">Base Steps</th>
+    <th scope="col">Ratio</th>
+    {{ end }}
     <th scope="col">Solver</th>
     <th scope="col">Time</th>
     <th scope="col"></th>
@@ -24,6 +31,10 @@
     <tr>
       <td><a href="/dashboard/problem/{{ .Problem }}{{ if $.Purchase }}?purchase={{ $.Purchase }}{{ end }}">{{ .Problem }}</a></td>
       <td>{{ .Score }}</td>
+      {{ if $.Purchase }}
+      <td>{{ .BaseScore }}</td>
+      <td>{{ .RatioStr }}</td>
+      {{ end }}
       <td>{{ .Solver }}</td>
       <td>{{ (localTime .Submitted).Format "2006-01-02 15:04:05" }}</td>
       <td><a href="/static/sim.html?problem={{ .Problem }}">Solve Manually</a></td>
