@@ -752,25 +752,6 @@ impl State {
                 mark_around.insert((dx + tx, dy + ty));
             }
         }
-        // アイテム取得処理
-        let item = self.bd[y as usize][x as usize].item();
-        if let Some(item) = item {
-            if item != 4 {
-                self.diff
-                    .bd
-                    .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
-                self.items[item] += 1;
-                self.bd[y as usize][x as usize].set_item(None);
-
-                if item == 6 {
-                    self.clone_num -= 1;
-                }
-
-                if item == 5 {
-                    self.robots[i].use_portal = true;
-                }
-            }
-        }
 
         self.robots[i].x = x;
         self.robots[i].y = y;
@@ -1029,9 +1010,6 @@ fn solve(
 
     let mut fin = false;
 
-    let mut items1 = state.items.clone();
-    let mut items2 = state.items.clone();
-
     while !fin {
         let mut cmds = vec![];
         let robot_num = state.robots.len();
@@ -1045,12 +1023,29 @@ fn solve(
             .unwrap()
             .1;
 
-        items1 = items2;
-        items2 = state.items.clone();
-
         // eprintln!("### TURN");
 
         for i in 0..robot_num {
+            // アイテム取得処理
+            if let Some(item) =
+                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item() {
+                if item != 4 {  // Not X.
+                    state.diff
+                        .bd
+                        .push((state.robots[i].x as usize, state.robots[i].y as usize, state.bd[state.robots[i].y as usize][state.robots[i].x as usize]));
+                    state.items[item] += 1;
+                    state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_item(None);
+
+                    if item == 6 {
+                        state.clone_num -= 1;
+                    }
+
+                    if item == 5 {
+                        state.robots[i].use_portal = true;
+                    }
+                }
+            }
+
             if i == 0 {
                 if state.items[6] > 0 {
                     if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
@@ -1150,9 +1145,7 @@ fn solve(
 
             // 手が増やせるならとりあえず縦に増やす
             if increase_mop {
-                if items1[1] > 0 && i == shortest_mop {
-                    items1[1] -= 1;
-                    items2[1] -= 1;
+                if state.items[1] > 0 && i == shortest_mop {
                     state.items[1] -= 1;
 
                     for ii in 0.. {
