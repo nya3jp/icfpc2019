@@ -86,11 +86,11 @@ def find_goal(grid, pos0):
     if (grid[pos0] == '#' or
         any(grid[pos0[0] + dx, pos0[1] + dy] == '#' for dx, dy in _DIRS)):
         return [(pos0, None)]
-    todo.append(pos0)
     
     assert(all(grid[pos0[0] + dx, pos0[1] + dy] != '#'
                for dx in [-1, 1] for dy in [-1, 1]))
     
+    todo.append(pos0)
     goal = None
     while len(todo) > 0:
         # Assume x0, y0 is diggable and not finished.
@@ -188,14 +188,14 @@ def main():
             if (x, y) in iSqs: grid[x, y] = '.'
             if (x, y) in oSqs: grid[x, y] = '*'
 
-    sys.stdout.write('start\n')
-    sys.stdout.write(str(grid))
+    #sys.stdout.write('start\n')
+    #sys.stdout.write(str(grid))
     dig(grid, oSqs)
-    sys.stdout.write('dig\n')
-    sys.stdout.write(str(grid))
+    #sys.stdout.write('dig\n')
+    #sys.stdout.write(str(grid))
 
     v = len(list(_create_polygon(grid, tSize)))
-    sys.stdout.write('poly:%d\n' % v)
+    #sys.stdout.write('poly:%d\n' % v)
     
     for y in range(tSize):
         for x in range(tSize):
