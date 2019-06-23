@@ -65,8 +65,8 @@ std::vector<std::pair<Point, Booster>> ParseBoosters(absl::string_view s) {
   return result;
 }
 
-std::vector<Instruction> ParseInstructionList(absl::string_view s) {
-  std::vector<Instruction> result;
+Program ParseProgram(absl::string_view s) {
+  Program result;
   for (std::size_t i = 0; i < s.length(); ++i) {
     Instruction inst;
     switch (s[i]) {
@@ -335,9 +335,26 @@ Desc ParseDesc(const std::string& task) {
 Solution ParseSolution(const std::string& solution) {
   Solution result;
   for (auto token : absl::StrSplit(solution, '#')) {
-    result.moves.emplace_back(ParseInstructionList(token));
+    result.programs.emplace_back(ParseProgram(token));
   }
   return result;
+}
+
+std::ostream& operator<<(std::ostream& os, const Program& program) {
+  for (const Instruction& inst : program) {
+    os << inst;
+  }
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const Solution& solution) {
+  for (size_t i = 0; i < solution.programs.size(); i++) {
+    if (i != 0) {
+      os << '#';
+    }
+    os << solution.programs[i];
+  }
+  return os;
 }
 
 Map::Map(const Desc& desc) {
@@ -843,9 +860,9 @@ bool Verify(Map* m, const Solution& sol) {
   int steps = 0;
   while (true) {
     bool is_ended = true;
-    std::size_t size = std::min(index_list.size(), sol.moves.size());
+    std::size_t size = std::min(index_list.size(), sol.programs.size());
     for (std::size_t i = 0; i < size; ++i) {
-      if (index_list[i] < sol.moves[i].size()) {
+      if (index_list[i] < sol.programs[i].size()) {
         is_ended = false;
         break;
       }
@@ -855,13 +872,13 @@ bool Verify(Map* m, const Solution& sol) {
 
     // Run wrappers in order.
     for (std::size_t i = 0; i < size; ++i) {
-      if (index_list[i] < sol.moves[i].size())
-        m->Run(i, sol.moves[i][index_list[i]]);
+      if (index_list[i] < sol.programs[i].size())
+        m->Run(i, sol.programs[i][index_list[i]]);
     }
 
     // Update index list.
     for (std::size_t i = 0; i < size; ++i) {
-      if (index_list[i] < sol.moves[i].size()) {
+      if (index_list[i] < sol.programs[i].size()) {
         ++index_list[i];
       }
     }

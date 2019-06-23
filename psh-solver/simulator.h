@@ -100,10 +100,16 @@ std::istream& operator>>(std::istream& is, Instruction& inst);
 
 Desc ParseDesc(const std::string& task);
 
+using Program = std::vector<Instruction>;
+
 struct Solution {
-  std::vector<std::vector<Instruction>> moves;
+  std::vector<Program> programs;
 };
+
 Solution ParseSolution(const std::string& solution);
+
+std::ostream& operator<<(std::ostream& os, const Program& program);
+std::ostream& operator<<(std::ostream& os, const Solution& solution);
 
 class Wrapper {
  public:
