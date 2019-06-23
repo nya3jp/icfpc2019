@@ -125,6 +125,9 @@ enum Opt {
         #[structopt(short = "b")]
         bought_boosters: Option<String>,
 
+        #[structopt(long = "aggressive-teleport")]
+        aggressive_teleport: bool,
+
         input: Option<PathBuf>,
     },
 
@@ -672,6 +675,7 @@ struct State {
     items: Vec<usize>,
     rest: usize,
     clone_num: usize,
+    portal_num: usize,
     portals: Vec<Pos>,
 
     hist: Vec<Diff>,
@@ -696,10 +700,14 @@ impl State {
             items[booster2u16(char2booster(c)) as usize] += 1;
         }
         let mut clone_num = 0;
+        let mut portal_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
                 if bd[y][x].item() == Some(6) {
                     clone_num += 1;
+                }
+                if bd[y][x].item() == Some(5) {
+                    portal_num += 1;
                 }
             }
         }
@@ -729,6 +737,7 @@ impl State {
             items: items,
             rest: 0,
             clone_num,
+            portal_num,
             portals: vec![],
 
             hist: vec![],
@@ -1163,6 +1172,7 @@ fn solve(
     island_size_threshold: i64,
     aggressive_item: bool,
     increase_mop: bool,
+    aggressive_teleport: bool,
     bought_boosters: &str,
 ) -> Solution {
     let h = bd_org.len() as i64;
@@ -1213,6 +1223,7 @@ fn solve(
                     }
 
                     if item == 5 {
+                        state.portal_num -= 1;
                         state.robots[i].num_collected_portal += 1;
                     }
                 }
@@ -1243,6 +1254,19 @@ fn solve(
                 } else if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
+                    let dx = nx - state.robots[i].x;
+                    let dy = ny - state.robots[i].y;
+                    if dx.abs() + dy.abs() == 1 {
+                        cmds.push(Command::Move(dx, dy));
+                    } else {
+                        cmds.push(Command::Teleport(nx, ny));
+                    }
+                    state.move_to(nx, ny, i, false);
+                    continue;
+                }
+                eprintln!("portal_num: {}", state.portal_num);
+                if aggressive_teleport && state.portal_num > 0 && state.robots[i].num_collected_portal == 0 {
+                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1361,10 +1385,6 @@ fn solve(
             // eprintln!("{}", &encode_commands(&ret));
         }
 
-        if steps == 3491 || steps == 3492 {
-            eprintln!("Cmds: {}, {:?}", steps, cmds);
-        }
-
         // state.dump();
         ret.push(cmds);
     }
@@ -1421,6 +1441,7 @@ fn solve_lightning(
     input: &Input,
     increase_mop: bool,
     show_solution: bool,
+    aggressive_teleport: bool,
     bought_boosters: &str,
 ) -> Result<()> {
     let mut input = input.clone();
@@ -1444,6 +1465,7 @@ fn solve_lightning(
                 th,
                 j != 0,
                 increase_mop,
+                aggressive_teleport,
                 bought_boosters,
             );
             eprintln!("{} {}: {}", i, j, cur.len());
@@ -1562,6 +1584,7 @@ fn main() -> Result<()> {
             increase_mop,
             bought_boosters,
             show_solution,
+            aggressive_teleport,
         } => {
             let (con, file) = read_file(&input)?;
             let problem = parse_input(&con)?;
@@ -1570,6 +1593,7 @@ fn main() -> Result<()> {
                 &problem,
                 increase_mop,
                 show_solution,
+                aggressive_teleport,
                 &bought_boosters.unwrap_or_default(),
             )?;
         }
