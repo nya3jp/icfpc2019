@@ -58,6 +58,10 @@ struct SolverOption {
     /// 0 以外の bot が C を回収する
     #[structopt(long = "aggressive-c-collect")]
     aggressive_c_collect: bool,
+
+    /// Cloneしない
+    #[structopt(long = "disable-clone")]
+    disable_clone: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -766,6 +770,7 @@ impl State {
         island_size_threshold: i64,
         bought_boosters: &str,
         vects: &[&[Pos]],
+        disable_clone: bool,
     ) -> State {
         let mut items = vec![0; 6 + 1];
         for c in bought_boosters.chars() {
@@ -786,11 +791,13 @@ impl State {
             }
         }
         let mut has_mystery = false;
-        for y in 0..bd.len() {
-            for x in 0..bd[y].len() {
-                if bd[y][x].item() == Some(4) {
-                    has_mystery = true;
-                    break;
+        if !disable_clone {
+            for y in 0..bd.len() {
+                for x in 0..bd[y].len() {
+                    if bd[y][x].item() == Some(4) {
+                        has_mystery = true;
+                        break;
+                    }
                 }
             }
         }
@@ -1332,6 +1339,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
         opt.island_size_threshold,
         bought_boosters,
         if opt.change_clone_dir { VECTS1 } else { VECTS2 },
+        opt.disable_clone,
     );
     let mut ret: Solution = vec![];
     state.move_to(sx, sy, 0, false);
@@ -2004,7 +2012,15 @@ fn read_file(path: &Option<PathBuf>) -> Result<(String, PathBuf)> {
     })
 }
 
-fn main() -> Result<()> {
+fn main() {
+    let builder = std::thread::Builder::new();
+    let th = builder.stack_size(16 * (1 << 20));
+
+    let handle = th.spawn(|| main_process().unwrap()).unwrap();
+    let _ = handle.join();
+}
+
+fn main_process() -> Result<()> {
     match Opt::from_args() {
         Opt::Solve {
             show_solution,
