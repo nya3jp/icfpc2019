@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -31,6 +33,7 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	r.Handle("GET", "/dashboard", h.handleIndex)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
 	r.Handle("GET", "/dashboard/zip", h.handleZip)
+	r.Handle("GET", "/dashboard/csv", h.handleCSV)
 	r.ServeFiles("/static/*filepath", http.Dir("infra/dashboard/static"))
 	return r
 }
@@ -78,6 +81,7 @@ type solution struct {
 	ID        int
 	Solver    string
 	Problem   string
+	Purchase  string
 	Size      Size
 	Evaluator string
 	Score     int32
@@ -90,7 +94,7 @@ func (s *solution) RatioStr() string {
 }
 
 func (s *solution) Weight() int {
-	return int(math.Ceil(1000 * math.Log2(float64(s.Size.Y)*float64(s.Size.Y))))
+	return int(math.Ceil(1000 * math.Log2(float64(s.Size.X)*float64(s.Size.Y))))
 }
 
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
@@ -244,12 +248,42 @@ func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter
 	})
 }
 
+func (h *handler) handleCSV(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	handle(w, r, func(ctx context.Context) error {
+		purchases, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
+		var bests []*solution
+		for _, p := range purchases {
+			ss, err := h.queryBestSolutions(ctx, p)
+			if err != nil {
+				return err
+			}
+			bests = append(bests, ss...)
+		}
+
+		now := time.Now().In(jst)
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"solutions-%s.csv\"", now.Format("20060102-150405")))
+		w.WriteHeader(http.StatusOK)
+		cw := csv.NewWriter(w)
+		for _, s := range bests {
+			cw.Write([]string{s.Problem, s.Purchase, strconv.Itoa(s.ID), s.Solver, strconv.Itoa(int(s.Score))})
+		}
+		cw.Flush()
+		return nil
+	})
+}
+
 func (h *handler) queryBestSolutions(ctx context.Context, purchase string) ([]*solution, error) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT
   id,
   solver,
   problem,
+  purchase,
   evaluator,
   score,
   submitted
@@ -284,6 +318,7 @@ SELECT
   id,
   solver,
   problem,
+  purchase,
   evaluator,
   score,
   submitted
@@ -305,7 +340,7 @@ func scanSolutions(rows *sql.Rows) ([]*solution, error) {
 	var ss []*solution
 	for rows.Next() {
 		var s solution
-		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
+		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Purchase, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
 			return nil, err
 		}
 		s.Size = problemSizes[s.Problem]

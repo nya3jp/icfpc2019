@@ -12,10 +12,11 @@ function filterChange(filter) {
 }
 
 function filtering(filter, raw_data) {
-  filtered = []
+  filtered = [];
+  reg = new RegExp(filter, "i");
   raw_data.forEach(function(elem) {
     for (team in elem) {
-      if (team.includes(filter)) {
+      if (reg.test(team)) {
         filtered.push(elem);
       }
     }
@@ -75,6 +76,7 @@ function drawRanking(raw_data) {
    data.addRows(rows);
 
    var options = {
+     explorer: {},
      hAxis: {
        title: 'Round'
      },

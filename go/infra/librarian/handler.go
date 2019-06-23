@@ -187,7 +187,7 @@ func (h *handler) validate(ctx context.Context, s *submitRequest) error {
 }
 
 func (h *handler) submit(ctx context.Context, s *submitRequest) (id, lastBestScore int, _ error) {
-	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := h.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return 0, 0, err
 	}

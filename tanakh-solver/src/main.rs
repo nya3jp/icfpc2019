@@ -1,5 +1,7 @@
 use chrono::prelude::*;
 use num_rational::Rational;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -122,6 +124,9 @@ enum Opt {
         #[structopt(long = "increase-mop")]
         increase_mop: bool,
 
+        #[structopt(short = "f")]
+        force_save: bool,
+
         #[structopt(short = "b")]
         bought_boosters: Option<String>,
 
@@ -140,13 +145,19 @@ enum Opt {
 
 type Pos = (i64, i64);
 
-const VECTS: &[&[Pos]] = &[
+const VECTS1: &[&[Pos]] = &[
     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
     &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+    &[(0, 1), (-1, 0), (0, -1), (1, 0)],
 
-    &[(-1, 0), (1, 0), (0, -1), (0, 1)],
-    &[(1, 0), (-1, 0), (0, 1), (0, -1)],
+    &[(-1, 0), (0, -1), (1, 0), (0, 1)],
+    &[(0, 1), (1, 0), (0, -1), (-1, 0)],
+    &[(1, 0), (0, 1), (-1, 0), (0, -1)],
+    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+];
 
+const VECTS2: &[&[Pos]] = &[
     &[(-1, 0), (0, -1), (0, 1), (1, 0)],
     &[(1, 0), (0, 1), (0, -1), (-1, 0)],
 
@@ -158,6 +169,7 @@ const VECTS: &[&[Pos]] = &[
 
     &[(-1, 0), (0, -1), (1, 0), (0, 1)],
     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
+];
 
     // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
     // &[(0, 1), (-1, 0), (0, -1), (1, 0)],
@@ -179,7 +191,7 @@ const VECTS: &[&[Pos]] = &[
     // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
     // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
     // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-];
+
 // const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -208,7 +220,7 @@ fn booster2u16(typ: Booster) -> u16 {
     typ as u16
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Command {
     Move(i64, i64),
     Nop,
@@ -529,7 +541,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
     let mut cands = vec![];
 
     // Initialize starting set.
-    let vect = &VECTS[i % VECTS.len()];
+    let vect = &state.robots[i].vect;
 
     for (ix, &(dx, dy)) in vect.iter().enumerate() {
         let cx = orig_x + dx;
@@ -666,7 +678,8 @@ struct RobotState {
     manips: Vec<Pos>,
     prios: usize,
     num_collected_portal: usize,
-    // vect: Vec<Pos>,
+    queue: Vec<Command>,
+    vect: Vec<Pos>,
 }
 
 struct State {
@@ -681,6 +694,7 @@ struct State {
     hist: Vec<Diff>,
     diff: Diff,
     island_size_threshold: i64,
+    vects: Vec<Vec<Pos>>,
 }
 
 #[derive(Default, Clone)]
@@ -694,7 +708,7 @@ struct Diff {
 }
 
 impl State {
-    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64, bought_boosters: &str) -> State {
+    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64, bought_boosters: &str, vects: &[&[Pos]]) -> State {
         let mut items = vec![0; 6 + 1];
         for c in bought_boosters.chars() {
             items[booster2u16(char2booster(c)) as usize] += 1;
@@ -727,13 +741,7 @@ impl State {
 
         let mut ret = State {
             bd: bd.clone(),
-            robots: vec![RobotState {
-                x,
-                y,
-                manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
-                prios: 0,
-                num_collected_portal: 0,
-            }],
+            robots: vec![],
             items: items,
             rest: 0,
             clone_num,
@@ -743,7 +751,9 @@ impl State {
             hist: vec![],
             diff: Diff::default(),
             island_size_threshold: island_size_threshold,
+            vects: vects.iter().map(|&r| r.to_owned()).collect(),
         };
+        ret.add_robot(x, y);
         ret.rest = ret.paint(x, y, 0, true, false, 0, 1 << 30);
         ret.paint(x, y, 0, false, false, 0, 1 << 30);
         // ret.diff = ret.create_diff();
@@ -751,12 +761,16 @@ impl State {
     }
 
     fn add_robot(&mut self, x: i64, y: i64) {
+        let mut vect = self.vects[self.robots.len() % self.vects.len()].to_owned();
+
         self.robots.push(RobotState {
             x,
             y,
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
             prios: 0,
             num_collected_portal: 0,
+            queue: vec![],
+            vect,
         });
     }
 
@@ -862,7 +876,7 @@ impl State {
                 self.diff.bd.push((tx as usize, ty as usize, prev));
             }
 
-            for &(dx, dy) in VECTS[i % VECTS.len()].iter() {
+            for &(dx, dy) in self.robots[i].vect.iter() {
                 mark_around.insert((dx + tx, dy + ty));
             }
         }
@@ -880,34 +894,12 @@ impl State {
                     continue;
                 }
 
-                let island_size = self.paint(
-                    mx,
-                    my,
-                    i,
-                    true,
-                    false,
-                    0,
-                    self.island_size_threshold as usize,
-                );
-                self.paint(
-                    mx,
-                    my,
-                    i,
-                    false,
-                    false,
-                    0,
-                    self.island_size_threshold as usize,
-                );
+                let th = self.island_size_threshold as usize;
+
+                let island_size = self.paint(mx, my, i, true, false, 0, th);
+                self.paint(mx, my, i, false, false, 0, th);
                 if island_size < self.island_size_threshold as usize {
-                    self.paint(
-                        mx,
-                        my,
-                        i,
-                        true,
-                        true,
-                        0,
-                        self.island_size_threshold as usize,
-                    );
+                    self.paint(mx, my, i, true, true, 0, th);
                 }
             }
         }
@@ -1173,12 +1165,13 @@ fn solve(
     aggressive_item: bool,
     increase_mop: bool,
     aggressive_teleport: bool,
+    change_clone_dir: bool,
     bought_boosters: &str,
 ) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd_org, sx, sy, island_size_threshold, bought_boosters);
+    let mut state = State::new(bd_org, sx, sy, island_size_threshold, bought_boosters, if change_clone_dir {VECTS1} else {VECTS2});
     let mut ret: Solution = vec![];
     state.move_to(sx, sy, 0, false);
 
@@ -1203,6 +1196,19 @@ fn solve(
         // eprintln!("### TURN");
 
         for i in 0..robot_num {
+            // if rand::random::<usize>() % 400 == 0 {
+            //     loop {
+            //         state.robots[i].vect.shuffle(&mut rand::thread_rng());
+            //         if if i % 2 == 0 {
+            //             state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
+            //         } else {
+            //             state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
+            //         } {
+            //             break;
+            //         }
+            //     }
+            // }
+
             // アイテム取得処理
             if let Some(item) =
                 state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
@@ -1229,6 +1235,17 @@ fn solve(
                 }
             }
 
+            // Queue
+            if let Some(cmd) = state.robots[i].queue.pop() {
+                // FIXME: cmdがmoveならmoveの処理が必要
+                match &cmd {
+                    Command::Turn(b) => state.rotate(*b, i),
+                    _ => unreachable!(),
+                }
+                cmds.push(cmd);
+                continue;
+            }
+
             if i == 0 {
                 if state.items[6] > 0 {
                     if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
@@ -1238,6 +1255,25 @@ fn solve(
 
                         cmds.push(Command::Clone);
                         state.add_robot(state.robots[i].x, state.robots[i].y);
+
+                        if change_clone_dir {
+                            let new_robot_id = state.robots.len() - 1;
+                            match new_robot_id % 4 {
+                                0 => {}
+                                1 => {
+                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
+                                }
+                                2 => {
+                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
+                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
+                                }
+                                3 => {
+                                    state.robots[new_robot_id].queue.push(Command::Turn(false));
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+
                         state.items[6] -= 1;
                     } else {
                         let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
@@ -1282,7 +1318,7 @@ fn solve(
             if aggressive_item {
                 let mut done = false;
                 // 隣にアイテムがあったら拾う
-                for &(dx, dy) in VECTS[i % VECTS.len()].iter() {
+                for &(dx, dy) in state.robots[i].vect.iter() {
                     let cx = dx + state.robots[i].x;
                     let cy = dy + state.robots[i].y;
                     if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
@@ -1339,12 +1375,26 @@ fn solve(
                 if state.items[1] > 0 && i == shortest_mop {
                     state.items[1] -= 1;
 
+                    let dir = *[(0, 1), (1, 0), (0, -1), (-1, 0)]
+                        .iter()
+                        .filter(|p| state.robots[i].manips.contains(p))
+                        .nth(0)
+                        .unwrap();
+
                     for ii in 0.. {
-                        let dy = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
-                        if !state.robots[i].manips.contains(&(1, dy)) {
-                            // eprintln!("**** ADD ARM ****");
-                            cmds.push(Command::AttachManip(1, dy));
-                            state.robots[i].manips.push((1, dy));
+                        let dd = if ii % 2 == 0 { -2 - ii / 2 } else { 2 + ii / 2 };
+
+                        let (dx, dy) = match dir {
+                            (0, 1) => (dd, 1),
+                            (0, -1) => (dd, -1),
+                            (1, 0) => (1, dd),
+                            (-1, 0) => (-1, dd),
+                            _ => unreachable!(),
+                        };
+
+                        if !state.robots[i].manips.contains(&(dx, dy)) {
+                            cmds.push(Command::AttachManip(dx, dy));
+                            state.robots[i].manips.push((dx, dy));
                             break;
                         }
                     }
@@ -1442,6 +1492,7 @@ fn solve_lightning(
     increase_mop: bool,
     show_solution: bool,
     aggressive_teleport: bool,
+    force_save: bool,
     bought_boosters: &str,
 ) -> Result<()> {
     let mut input = input.clone();
@@ -1450,27 +1501,38 @@ fn solve_lightning(
 
     let mut ans = vec![];
 
-    // let island_th_params = 0..20;
-    let island_th_params = 9..10;
+    let island_th_params = &[25, 50, 100];
+    // let island_th_params = 9..10;
 
-    for i in island_th_params {
-        let aggressive_item_get = 1..2;
+    for &i in island_th_params.iter() {
+        let aggressive_item_get = 1..=1;
 
-        let th = 5 + 5 * i;
         for j in aggressive_item_get {
-            let cur = solve(
-                &mut bd,
-                input.init_pos.0,
-                input.init_pos.1,
-                th,
-                j != 0,
-                increase_mop,
-                aggressive_teleport,
-                bought_boosters,
-            );
-            eprintln!("{} {}: {}", i, j, cur.len());
-            if ans.len() == 0 || ans.len() > cur.len() {
-                ans = cur;
+            let change_clone_dir = 0..=1;
+
+            for k in change_clone_dir {
+                let cur = solve(
+                    &mut bd,
+                    input.init_pos.0,
+                    input.init_pos.1,
+                    i,
+                    j != 0,
+                    k != 0,
+                    increase_mop,
+                    aggressive_teleport,
+                    bought_boosters,
+                );
+                if ans.len() == 0 || ans.len() > cur.len() {
+                    ans = cur.clone();
+                }
+                eprintln!(
+                    "{}, {}, {}: cur: {}, best: {}",
+                    i,
+                    j,
+                    k,
+                    cur.len(),
+                    ans.len()
+                );
             }
         }
     }
@@ -1492,7 +1554,7 @@ fn solve_lightning(
     if show_solution || name == "stdin" {
         println!("{}", encode_commands(&ans));
     } else {
-        save_solution(LIGHTNING_DIR, name, &ans, score)?;
+        save_solution(LIGHTNING_DIR, name, &ans, score, force_save)?;
     }
 
     Ok(())
@@ -1548,12 +1610,20 @@ fn get_best_score(root: &str, name: &str) -> Result<Option<i64>> {
     })
 }
 
-fn save_solution(root: &str, name: &str, ans: &Solution, score: i64) -> Result<()> {
+fn save_solution(
+    root: &str,
+    name: &str,
+    ans: &Solution,
+    score: i64,
+    force_save: bool,
+) -> Result<()> {
     // println!("*****: {:?} {:?} {:?} {}", root, name, score);
 
     let best = get_best_score(root, name)?.unwrap_or(0);
-    if best == 0 || best > score {
-        eprintln!("* Best score for {}: {} -> {}", name, best, score);
+    if best == 0 || best > score || force_save {
+        if best == 0 || best > score {
+            eprintln!("* Best score for {}: {} -> {}", name, best, score);
+        }
         let pb = get_result_dir(root, name)?;
         fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
     }
@@ -1580,11 +1650,12 @@ fn read_file(path: &Option<PathBuf>) -> Result<(String, PathBuf)> {
 fn main() -> Result<()> {
     match Opt::from_args() {
         Opt::Solve {
-            input,
-            increase_mop,
-            bought_boosters,
             show_solution,
+            increase_mop,
+            force_save,
+            bought_boosters,
             aggressive_teleport,
+            input,
         } => {
             let (con, file) = read_file(&input)?;
             let problem = parse_input(&con)?;
@@ -1594,6 +1665,7 @@ fn main() -> Result<()> {
                 increase_mop,
                 show_solution,
                 aggressive_teleport,
+                force_save,
                 &bought_boosters.unwrap_or_default(),
             )?;
         }

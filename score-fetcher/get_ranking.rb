@@ -2,6 +2,7 @@
 
 require "json"
 
+balances = JSON.parse(File.read('balances.json'))
 rankings = JSON.parse(File.read('rankings.json'))
 team_list = []
 rankings.each{|ranking|
@@ -12,7 +13,7 @@ rankings.each{|ranking|
 }
 
 total_team_num = team_list.length
-current_ranking = rankings.last.map{|v| v.keys[0]}
+current_ranking = balances.last.sort_by {|v| -v[1]}
 
 relative_rankings = []
 
@@ -32,13 +33,13 @@ relative_scores_by_team = []
 current_ranking.each{|team|
   scores = []
   relative_rankings.each{|ranking|
-    if ranking.key?(team)
-      scores.push(ranking[team])
+    if ranking.key?(team[0])
+      scores.push(ranking[team[0]])
     else
       scores.push(0.0)
     end
   }
-  relative_scores_by_team.push({team => scores})
+  relative_scores_by_team.push({team[0] => scores})
 }
 
 puts JSON.pretty_generate(relative_scores_by_team)
