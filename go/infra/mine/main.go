@@ -70,7 +70,7 @@ func main() {
 		}
 		defer m.l.Close()
 		if err := m.Run(ctx); err != nil {
-			m.l.Logf("@everyone ERROR: %v", err)
+			m.l.Logf("<!channel> ERROR: %v", err)
 			return err
 		}
 		m.l.Log("Success!")
