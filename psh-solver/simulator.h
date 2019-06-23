@@ -272,6 +272,8 @@ class Map {
   void RunUnsafe(int index, const Instruction& inst);
   void Undo();
 
+  bool IsVisible(const Point& origin, const Point& target) const;
+
   std::string ToString() const;
 
  private:
