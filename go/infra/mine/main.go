@@ -260,7 +260,7 @@ loop:
 		select {
 		case r := <-ch:
 			if r.err != nil {
-				m.l.Logf("Warning: Failed to run the task solver %s: %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Solution>, <https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Validation>)", r.name, r.err, bucket, m.args.block, r.name, bucket, m.args.block, r.name)
+				m.l.Logf("Warning: Failed to run the task solver %s: %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Solution>, <https://storage.googleapis.com/%s/results/%d/solvers/task/%s/validation.txt|Validation>)", r.name, r.err, bucket, m.args.block, r.name, bucket, m.args.block, r.name)
 			} else {
 				m.l.Logf("Task solver %s passed with score %d in %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Solution>)", r.name, r.score, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
@@ -332,6 +332,12 @@ func (m *miner) runTask(ctx context.Context, t *task) error {
 		return err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusInternalServerError {
+		// Retry silently.
+		time.Sleep(5 * time.Second)
+		return m.runTask(ctx, t)
+	}
 
 	if res.StatusCode != http.StatusOK {
 		b, _ := ioutil.ReadAll(res.Body)
