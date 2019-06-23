@@ -3,6 +3,41 @@ google.charts.setOnLoadCallback(draw);
 
 data_url = 'https://storage.googleapis.com/sound-type-system/rankings/ranking_data.json'
 
+function filterChange(filter) {
+    if (filter == "") {
+      draw();
+    } else {
+      drawWithFilter(filter);
+    }
+}
+
+function filtering(filter, raw_data) {
+  filtered = []
+  raw_data.forEach(function(elem) {
+    for (team in elem) {
+      if (team.includes(filter)) {
+        filtered.push(elem);
+      }
+    }
+  });
+  return filtered;
+}
+
+function drawWithFilter(filter) {
+  var xmlhttp = new XMLHttpRequest();
+  xmlhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var raw_data = JSON.parse(this.responseText);
+      filtered = filtering(filter, raw_data);
+      console.log(filter);
+      console.log(filtered);
+      drawRanking(filtered);
+    }
+  }
+  xmlhttp.open("GET", data_url, true);
+  xmlhttp.send();
+}
+
 function draw() {
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function() {
