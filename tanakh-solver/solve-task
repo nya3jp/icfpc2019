@@ -1,3 +1,8 @@
 #/bin/sh -e
 
-./tanakh-solver solve --increase-mop
+extras=""
+if [ -n "$1" ]; then
+    extras="-b $1"
+fi
+
+./tanakh-solver solve --increase-mop $extras

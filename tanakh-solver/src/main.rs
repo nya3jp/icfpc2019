@@ -181,12 +181,28 @@ const VECTS: &[&[Pos]] = &[
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
-    B,
+    B = 1,
     F,
     L,
     X,
     R,
     C,
+}
+
+fn char2booster(c: char) -> Booster {
+    match c {
+        'B' => Booster::B,
+        'F' => Booster::F,
+        'L' => Booster::L,
+        'X' => Booster::X,
+        'R' => Booster::R,
+        'C' => Booster::C,
+        _ => unreachable!()
+    }
+}
+
+fn booster2u16(typ: Booster) -> u16 {
+    typ as u16
 }
 
 #[derive(Debug)]
@@ -236,22 +252,6 @@ fn parse_pos_list_list(s: &str) -> Result<Vec<Vec<Pos>>> {
         .filter(|w| w.trim() != "")
         .map(parse_pos_list)
         .collect()
-}
-
-fn char2booster(c: char) -> Booster {
-    match c {
-        'B' => Booster::B,
-        'F' => Booster::F,
-        'L' => Booster::L,
-        'X' => Booster::X,
-        'R' => Booster::R,
-        'C' => Booster::C,
-        _ => unreachable!()
-    }
-}
-
-fn booster2u16(typ: Booster) -> u16 {
-    (typ as u16) + 1
 }
 
 fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
