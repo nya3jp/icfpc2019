@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -285,55 +287,64 @@ func (h *handler) handleCSV(w http.ResponseWriter, r *http.Request, _ httprouter
 }
 
 func (h *handler) queryOptimalSolutions(ctx context.Context) ([]*solution, error) {
-	money := 285346
+	balance := loadBalance()
 
-	bases, err := h.queryBestSolutions(ctx, "")
-	if err != nil {
-		return nil, err
+	type bestKey struct {
+		problem string
+		clones  int
 	}
-	baseMap := make(map[string]*solution)
-	for _, s := range bases {
-		baseMap[s.Problem] = s
-	}
+	bestMap := make(map[bestKey]*solution)
 
-	clones, err := h.queryBestSolutions(ctx, "C")
-	if err != nil {
-		return nil, err
-	}
-	cloneMap := make(map[string]*solution)
-	for _, s := range clones {
-		cloneMap[s.Problem] = s
+	for _, clones := range []int{0, 1, 2, 3} {
+		ss, err := h.queryBestSolutions(ctx, strings.Repeat("C", clones))
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range ss {
+			bestMap[bestKey{s.Problem, clones}] = s
+		}
 	}
 
-	sort.Slice(clones, func(i, j int) bool {
-		pi := clones[i].Problem
-		pj := clones[j].Problem
-		ri := float64(cloneMap[pi].BaseScore) / float64(cloneMap[pi].Score)
-		rj := float64(cloneMap[pj].BaseScore) / float64(cloneMap[pj].Score)
-		return ri > rj
-	})
+	selected := make(map[string]*solution)
+	for k, s := range bestMap {
+		if k.clones == 0 {
+			selected[k.problem] = s
+		}
+	}
+
+	for balance >= 2000 {
+		type candidate struct {
+			ratio float64
+			s     *solution
+		}
+		var cands []*candidate
+		for _, s := range selected {
+			c, ok := bestMap[bestKey{s.Problem, len(s.Purchase) + 1}]
+			if !ok {
+				continue
+			}
+			r := float64(s.Score) / float64(c.Score)
+			cands = append(cands, &candidate{r, c})
+		}
+		sort.Slice(cands, func(i, j int) bool {
+			return cands[i].ratio > cands[j].ratio
+		})
+		if len(cands) == 0 {
+			break
+		}
+		cand := cands[0]
+		if cand.ratio < 1.5 {
+			break
+		}
+		selected[cand.s.Problem] = cand.s
+		balance -= 2000
+	}
 
 	var optimal []*solution
-	seen := make(map[string]struct{})
-	for _, s := range clones {
-		b := baseMap[s.Problem]
-		if s.Score > b.Score {
-			continue
-		}
-		if money < 2000 {
-			continue
-		}
-		money -= 2000
+	for _, s := range selected {
 		optimal = append(optimal, s)
-		seen[s.Problem] = struct{}{}
 	}
-	for _, s := range bases {
-		if _, ok := seen[s.Problem]; ok {
-			continue
-		}
-		optimal = append(optimal, s)
-		seen[s.Problem] = struct{}{}
-	}
+
 	return optimal, nil
 }
 
@@ -431,4 +442,36 @@ ORDER BY purchase ASC
 		purchases = append(purchases, p)
 	}
 	return purchases, nil
+}
+
+func loadBalance() int {
+	const (
+		defaultBalance = 345331 // as of block 64
+		blocksDir      = "../autominer/blocks"
+	)
+
+	fis, err := ioutil.ReadDir(blocksDir)
+	if err != nil {
+		return defaultBalance
+	}
+
+	balance := defaultBalance
+	for _, fi := range fis {
+		b, err := ioutil.ReadFile(filepath.Join(blocksDir, fi.Name(), "balances.json"))
+		if err != nil {
+			continue
+		}
+		var m map[string]string
+		if err := json.Unmarshal(b, &m); err != nil {
+			continue
+		}
+		bl, err := strconv.Atoi(m["78"])
+		if err != nil {
+			continue
+		}
+		if bl > balance {
+			balance = bl
+		}
+	}
+	return balance
 }
