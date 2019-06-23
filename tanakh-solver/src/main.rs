@@ -2,7 +2,7 @@ use chrono::prelude::*;
 use num_rational::Rational;
 use regex::Regex;
 use std::cmp::{max, min};
-use std::collections::{BTreeMap, BTreeSet, VecDeque, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -55,7 +55,7 @@ impl Cell {
     }
 
     fn set_portal(&mut self) {
-        self.0 = (self.0 | (1 << 2));
+        self.0 = self.0 | (1 << 2);
     }
     fn has_portal(&self) -> bool {
         self.0 & 4 != 0
@@ -197,7 +197,7 @@ fn char2booster(c: char) -> Booster {
         'X' => Booster::X,
         'R' => Booster::R,
         'C' => Booster::C,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -424,112 +424,92 @@ fn build_map(input: &Input, w: i64, h: i64) -> Board {
 
 // solution
 
-fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(i64, i64)> {
+/*
+fn nearest_cmd(state: &State, i: usize) -> Option<Command> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
-    /*
-        let mut q = VecDeque::new();
-        q.push_back((x, y));
+    type St = (i64, i64, usize);
 
-        let mut found = None;
-        let mut prev = BTreeMap::<Pos, Pos>::new();
+    let mut q = VecDeque::new();
+    q.push_back((state.robots[i].x, state.robots[i].y, 0));
 
-        while let Some((cx, cy)) = q.pop_front() {
-            for &(dx, dy) in VECT.iter() {
-                let nx = cx + dx;
-                let ny = cy + dy;
+    let mut found = None;
+    let mut prev = BTreeMap::<St, St>::new();
 
-                if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                    continue;
-                }
+    const MOVS: [(i64, i64, usize)] = [
+        (0, 0, 1),
+        (0, 0, 3),
+        (1, 0, 0),
+        (-1, 0, 0),
+        (0, 1, 0),
+        (0, -1, 0),
+    ];
 
-                if bd[ny as usize][nx as usize] & 1 != 0 {
-                    continue;
-                }
+    while let Some((cx, cy, cdir)) = q.pop_front() {
+        for &(dx, dy, ddir) in moves.iter() {
+            let nx = cx + dx;
+            let ny = cy + dy;
+            let ndir = (cdir + )
 
-                if prev.contains_key(&(nx, ny)) {
-                    continue;
-                }
-
-                prev.insert((nx, ny), (cx, cy));
-                q.push_back((nx, ny));
-
-                if bd[ny as usize][nx as usize] & 2 == 0
-                    && if has_prios {
-                        bd[ny as usize][nx as usize] & 4 != 0
-                    } else {
-                        true
-                    }
-                {
-                    found = Some((nx, ny));
-                    // dbg!((&found, bd[ny as usize][nx as usize]));
-                    break;
-                }
+            if !(nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                continue;
             }
-            if found.is_some() {
+
+            if bd[ny as usize][nx as usize] & 1 != 0 {
+                continue;
+            }
+
+            if prev.contains_key(&(nx, ny, ndir)) {
+                continue;
+            }
+
+            prev.insert((nx, ny), (cx, cy));
+            q.push_back((nx, ny));
+
+            if bd[ny as usize][nx as usize] & 2 == 0
+                && if has_prios {
+                    bd[ny as usize][nx as usize] & 4 != 0
+                } else {
+                    true
+                }
+            {
+                found = Some((nx, ny));
+                // dbg!((&found, bd[ny as usize][nx as usize]));
                 break;
             }
         }
-
-        if found.is_none() {
-            return None;
-        }
-
-
-        let (mut tx, mut ty) = found.unwrap();
-
-        // let mut route_len = 0;
-
-        loop {
-            // route_len += 1;
-            let n = prev[&(tx, ty)];
-            if n == (x, y) {
-                // dbg!((route_len, tx, ty, x, y));
-                return Some((tx, ty));
-            }
-            tx = n.0;
-            ty = n.1;
-        }
-    */
-    /*
-    let mut best_score = (0xffffffff, 0xffffffff);
-    let mut ret = None;
-
-    for &(dx, dy) in VECTS[i % VECTS.len()].iter() {
-        let cx = state.robots[i].x + dx;
-        let cy = state.robots[i].y + dy;
-
-        if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
-            continue;
-        }
-
-        if state.bd[cy as usize][cx as usize].is_wall() {
-            continue;
-        }
-
-        if let Some(dist) = nearest_empty_dist(&state.bd, cx, cy, f, VECTS[i % VECTS.len()]) {
-            //let sc = state.try_move_to(cx, cy, i);
-            let sc = 0_i64;
-            if (dist, -sc) < best_score {
-                best_score = (dist, -sc);
-                ret = Some((cx, cy));
-            }
+        if found.is_some() {
+            break;
         }
     }
 
-    for &(x, y) in state.portals.iter() {
-        if let Some(dist) = nearest_empty_dist(&state.bd, x, y, f, VECTS[i]) {
-            let sc = 0_i64;
-            if (dist, -sc) < best_score {
-                best_score = (dist, -sc);
-                ret = Some((x, y));
-            }
-        }
+    if found.is_none() {
+        return None;
     }
 
+
+    let (mut tx, mut ty) = found.unwrap();
+
+    // let mut route_len = 0;
+
+    loop {
+        // route_len += 1;
+        let n = prev[&(tx, ty)];
+        if n == (x, y) {
+            // dbg!((route_len, tx, ty, x, y));
+            return Some((tx, ty));
+        }
+        tx = n.0;
+        ty = n.1;
+    }
     ret
-     */
+}
+*/
+
+fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(i64, i64)> {
+    let h = state.bd.len() as i64;
+    let w = state.bd[0].len() as i64;
 
     let orig_x = state.robots[i].x;
     let orig_y = state.robots[i].y;
@@ -541,9 +521,12 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
 
     let mut q = VecDeque::new();
     let mut backtrack = HashMap::new();
+    let mut cands = vec![];
+
     // Initialize starting set.
     let vect = &VECTS[i % VECTS.len()];
-    for &(dx, dy) in vect.iter() {
+
+    for (ix, &(dx, dy)) in vect.iter().enumerate() {
         let cx = orig_x + dx;
         let cy = orig_y + dy;
 
@@ -553,45 +536,56 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
         if bd[cy as usize][cx as usize].is_wall() {
             continue;
         }
-        q.push_back((cx, cy));
-        backtrack.insert((cx, cy), (orig_x, orig_y));
+
+        let sc = state.overwrap_score(cx, cy, i);
+        cands.push(((sc, ix), (cx, cy)));
     }
 
     // Portals.
-    for &(x, y) in state.portals.iter() {
+    for (ix, &(x, y)) in state.portals.iter().enumerate() {
+        let sc = state.overwrap_score(x, y, i);
+        cands.push(((sc, ix + vect.len()), (x, y)));
+    }
+
+    // ordering
+    cands.sort();
+
+    for (_, (x, y)) in cands {
+        // q.push_back((cx, cy));
+        // backtrack.insert((cx, cy), (orig_x, orig_y));
+
         q.push_back((x, y));
         backtrack.insert((x, y), (orig_x, orig_y));
     }
 
-    let found =
-        loop {
-            if q.is_empty() {
-                break None;
-            }
-            let (cx, cy) = q.pop_front().unwrap();
-            if f(bd[cy as usize][cx as usize]) {
-                break Some((cx, cy));
-            }
+    let found = loop {
+        if q.is_empty() {
+            break None;
+        }
+        let (cx, cy) = q.pop_front().unwrap();
+        if f(bd[cy as usize][cx as usize]) {
+            break Some((cx, cy));
+        }
 
-            for &(dx, dy) in vect.iter() {
-                let nx = cx + dx;
-                let ny = cy + dy;
+        for &(dx, dy) in vect.iter() {
+            let nx = cx + dx;
+            let ny = cy + dy;
 
-                if nx < 0 || w <= nx || ny < 0 || h <= ny {
-                    // Out of map.
-                    continue;
-                }
-                if bd[ny as usize][nx as usize].is_wall() {
-                    continue;
-                }
-                if backtrack.contains_key(&(nx, ny)) {
-                    // Already visited.
-                    continue;
-                }
-                backtrack.insert((nx, ny), (cx, cy));
-                q.push_back((nx, ny));
+            if nx < 0 || w <= nx || ny < 0 || h <= ny {
+                // Out of map.
+                continue;
             }
-        };
+            if bd[ny as usize][nx as usize].is_wall() {
+                continue;
+            }
+            if backtrack.contains_key(&(nx, ny)) {
+                // Already visited.
+                continue;
+            }
+            backtrack.insert((nx, ny), (cx, cy));
+            q.push_back((nx, ny));
+        }
+    };
 
     if found.is_none() {
         return None;
@@ -607,7 +601,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
                 cx = nx;
                 cy = ny;
             }
-            None => unreachable!()
+            None => unreachable!(),
         }
     }
 }
@@ -629,7 +623,7 @@ fn nearest_empty_dist(
     let mut q = VecDeque::new();
     q.push_back((x, y, 0));
 
-    let mut close = BTreeSet::<Pos>::new();
+    let mut close = HashSet::<Pos>::new();
     close.insert((x, y));
 
     while let Some((cx, cy, dep)) = q.pop_front() {
@@ -667,6 +661,7 @@ struct RobotState {
     manips: Vec<Pos>,
     prios: usize,
     num_collected_portal: usize,
+    // vect: Vec<Pos>,
 }
 
 struct State {
@@ -1013,25 +1008,85 @@ impl State {
         self.move_to(self.robots[i].x, self.robots[i].y, i, true);
     }
 
-    fn nearest_empty_dist(&self, i: usize, f: impl Fn(Cell) -> bool) -> usize {
-        if self.rest == 0 {
-            0
-        } else {
-            nearest_empty_dist(
-                &self.bd,
-                self.robots[i].x,
-                self.robots[i].y,
-                f,
-                VECTS[i % VECTS.len()],
-            )
-            .unwrap()
-        }
-    }
+    // fn nearest_empty_dist(&self, i: usize, f: impl Fn(Cell) -> bool) -> usize {
+    //     if self.rest == 0 {
+    //         0
+    //     } else {
+    //         nearest_empty_dist(
+    //             &self.bd,
+    //             self.robots[i].x,
+    //             self.robots[i].y,
+    //             f,
+    //             VECTS[i % VECTS.len()],
+    //         )
+    //         .unwrap()
+    //     }
+    // }
 
     // fn score(&mut self, i: usize) -> f64 {
     //     self.prios as f64 * 100.0 + self.rest as f64 + self.nearest_empty_dist(i) as f64 * 0.01
     // }
 
+    fn overwrap_score(&self, x: i64, y: i64, i: usize) -> i64 {
+        return 0;
+
+        /*
+        let h = self.bd.len() as i64;
+        let w = self.bd[0].len() as i64;
+
+        let mut penalty = 0;
+
+        let manips = self.robots[i].manips.clone();
+
+        let mut bodies = BTreeSet::new();
+
+        for &(dx, dy) in manips.iter() {
+            let tx = self.robots[i].x + dx;
+            let ty = self.robots[i].y + dy;
+            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                continue;
+            }
+            bodies.insert((tx, ty));
+        }
+
+        for &(dx, dy) in manips.iter() {
+            let tx = x + dx;
+            let ty = y + dy;
+            if !(tx >= 0 && tx < w && ty >= 0 && ty < h) {
+                continue;
+            }
+
+            let mut ok = true;
+            for (px, py) in pass_cells(x, y, tx, ty) {
+                if self.bd[py as usize][px as usize].is_wall() {
+                    ok = false;
+                    break;
+                }
+            }
+
+            if bodies.contains(&(tx, ty)) {
+                penalty += 1;
+                continue;
+            }
+
+            if !ok {
+                penalty += 4;
+                continue;
+            }
+
+            if self.bd[ty as usize][tx as usize].is_painted() {
+                penalty += 4;
+                continue;
+            }
+
+            // penalty -= 4;
+        }
+
+        penalty
+        */
+    }
+
+    #[allow(dead_code)]
     fn dump(&self) {
         for i in 0..self.robots.len() {
             eprintln!("Roboto[{}]: {}, {}", i, self.robots[i].x, self.robots[i].y);
@@ -1136,11 +1191,15 @@ fn solve(
         for i in 0..robot_num {
             // アイテム取得処理
             if let Some(item) =
-                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item() {
-                if item != 4 {  // Not X.
-                    state.diff
-                        .bd
-                        .push((state.robots[i].x as usize, state.robots[i].y as usize, state.bd[state.robots[i].y as usize][state.robots[i].x as usize]));
+                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+            {
+                if item != 4 {
+                    // Not X.
+                    state.diff.bd.push((
+                        state.robots[i].x as usize,
+                        state.robots[i].y as usize,
+                        state.bd[state.robots[i].y as usize][state.robots[i].x as usize],
+                    ));
                     state.items[item] += 1;
                     state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_item(None);
 
@@ -1166,10 +1225,6 @@ fn solve(
                         state.add_robot(state.robots[i].x, state.robots[i].y);
                         state.items[6] -= 1;
                     } else {
-                        // if nearest(&state, i, |c| (c >> 4) == 4).is_none() {
-                        //     state.dump();
-                        // }
-
                         let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
                         let dx = nx - state.robots[i].x;
                         let dy = ny - state.robots[i].y;
@@ -1182,10 +1237,6 @@ fn solve(
                     }
                     continue;
                 } else if state.clone_num > 0 {
-                    // if nearest(&state, i, |c| (c >> 4) & 0xf == 6).is_none() {
-                    //     state.dump();
-                    // }
-
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
                     let dx = nx - state.robots[i].x;
@@ -1212,11 +1263,8 @@ fn solve(
                     let item = state.bd[cy as usize][cx as usize].item();
                     // 使える奴だけ
                     if item == Some(1) || item == Some(5) {
-                        // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
-                        // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
                         state.move_to(cx, cy, i, true);
                         cmds.push(Command::Move(dx, dy));
-                        // eprintln!("{}", state.bd[cy as usize][cx as usize]);
                         done = true;
                         break;
                     }
@@ -1227,10 +1275,12 @@ fn solve(
                 }
             }
 
-            if state.robots[i].num_collected_portal > 0 &&
-                state.items[5] > 0 &&
-                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item() != Some(4) &&
-                !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal() {
+            if state.robots[i].num_collected_portal > 0
+                && state.items[5] > 0
+                && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+                    != Some(4)
+                && !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal()
+            {
                 state.robots[i].num_collected_portal -= 1;
                 state.portals.push((state.robots[i].x, state.robots[i].y));
                 state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_portal();
@@ -1276,8 +1326,6 @@ fn solve(
 
             let dx = nx - state.robots[i].x;
             let dy = ny - state.robots[i].y;
-
-            // dbg!((dx, dy, &state.manips));
 
             // 移動する方向にモップを回す
             // let mut rot_cnt = 0;

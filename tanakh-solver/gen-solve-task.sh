@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -ex
 
 cargo build --release
 
