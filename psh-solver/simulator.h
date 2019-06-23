@@ -100,6 +100,11 @@ std::istream& operator>>(std::istream& is, Instruction& inst);
 
 Desc ParseDesc(const std::string& task);
 
+struct Solution {
+  std::vector<std::vector<Instruction>> moves;
+};
+Solution ParseSolution(const std::string& solution);
+
 class Wrapper {
  public:
   explicit Wrapper(const Point& point) : point_(point) {}
@@ -273,6 +278,8 @@ class Map {
   // Maybe deque to limit num backtrackable for performance?
   std::vector<BacklogEntry> backlogs_;
 };
+
+bool Verify(Map* m, const Solution& sol);
 
 } // namespace icpfc2019
 

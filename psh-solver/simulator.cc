@@ -1,6 +1,7 @@
 #include "simulator.h"
 
 #include <algorithm>
+#include <iostream>
 
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
@@ -60,6 +61,36 @@ std::vector<std::pair<Point, Booster>> ParseBoosters(absl::string_view s) {
         LOG(FATAL) << "Unknown booster: " << token;
     }
     result.emplace_back(p, b);
+  }
+  return result;
+}
+
+std::vector<Instruction> ParseInstructionList(absl::string_view s) {
+  std::vector<Instruction> result;
+  for (std::size_t i = 0; i < s.length(); ++i) {
+    Instruction inst;
+    switch (s[i]) {
+      case 'W': inst.type = Instruction::Type::W; break;
+      case 'S': inst.type = Instruction::Type::S; break;
+      case 'A': inst.type = Instruction::Type::A; break;
+      case 'D': inst.type = Instruction::Type::D; break;
+      case 'Q': inst.type = Instruction::Type::Q; break;
+      case 'E': inst.type = Instruction::Type::E; break;
+      case 'Z': inst.type = Instruction::Type::Z; break;
+      case 'B': inst.type = Instruction::Type::B; break;
+      case 'F': inst.type = Instruction::Type::F; break;
+      case 'L': inst.type = Instruction::Type::L; break;
+      case 'R': inst.type = Instruction::Type::R; break;
+      case 'T': inst.type = Instruction::Type::T; break;
+      case 'C': inst.type = Instruction::Type::C; break;
+    }
+    if(s[i] == 'B' || s[i] == 'T'){
+      int begin = i + 2;
+      int end = s.find(')', begin);
+      inst.arg = ParsePoint(s.substr(begin, end - begin));
+      i = end;
+    }
+    result.push_back(std::move(inst));
   }
   return result;
 }
@@ -298,6 +329,14 @@ Desc ParseDesc(const std::string& task) {
     }
   }
 
+  return result;
+}
+
+Solution ParseSolution(const std::string& solution) {
+  Solution result;
+  for (auto token : absl::StrSplit(solution, '#')) {
+    result.moves.emplace_back(ParseInstructionList(token));
+  }
   return result;
 }
 
@@ -726,6 +765,51 @@ void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
       --remaining_;
     }
   }
+}
+
+bool Verify(Map* m, const Solution& sol) {
+  std::vector<std::size_t> index_list;
+  index_list.push_back(0);
+  int steps = 0;
+  while (true) {
+    bool is_ended = true;
+    std::size_t size = std::min(index_list.size(), sol.moves.size());
+    for (std::size_t i = 0; i < size; ++i) {
+      if (index_list[i] < sol.moves[i].size()) {
+        is_ended = false;
+        break;
+      }
+    }
+    if (is_ended)
+      break;
+
+    // Run wrappers in order.
+    for (std::size_t i = 0; i < size; ++i) {
+      if (index_list[i] < sol.moves[i].size())
+        m->Run(i, sol.moves[i][index_list[i]]);
+    }
+
+    // Update index list.
+    for (std::size_t i = 0; i < size; ++i) {
+      if (index_list[i] < sol.moves[i].size()) {
+        ++index_list[i];
+      }
+    }
+    while (index_list.size() < m->wrappers().size()) {
+      index_list.push_back(0);
+    }
+
+    ++steps;
+  }
+
+  if (m->remaining() > 0) {
+    std::cout << "Failed!: Still remaining "
+              << m->remaining() << " at step " << steps;
+    return false;
+  }
+
+  std::cout << "Success! Passed at step " << steps;
+  return true;
 }
 
 }  // namepace icfpc2019
