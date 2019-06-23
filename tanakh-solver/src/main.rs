@@ -170,6 +170,8 @@ enum Command {
     AttachManip(i64, i64),
     AttachWheel,
     StartDrill,
+    SetPortal,
+    Teleport(i64, i64),
     Clone,
 }
 
@@ -308,7 +310,8 @@ fn encode_commands(ans: &Solution) -> String {
                     Command::AttachManip(dx, dy) => ret += &format!("B({},{})", dx, dy),
                     Command::AttachWheel => ret += "F",
                     Command::StartDrill => ret += "L",
-
+                    Command::SetPortal => ret += "R",
+                    Command::Teleport(x, y) => ret += &format!("T({},{})", x, y),
                     Command::Clone => ret += "C",
                 }
             }
@@ -489,6 +492,16 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
         }
     }
 
+    for &(x, y) in state.portals.iter() {
+        if let Some(dist) = nearest_empty_dist(&state.bd, x, y, f, VECTS[i]) {
+            let sc = 0_i64;
+            if (dist, -sc) < best_score {
+                best_score = (dist, -sc);
+                ret = Some((x, y));
+            }
+        }
+    }
+
     ret
 }
 
@@ -546,6 +559,7 @@ struct RobotState {
     y: i64,
     manips: Vec<Pos>,
     prios: usize,
+    use_portal: bool,
 }
 
 struct State {
@@ -554,6 +568,7 @@ struct State {
     items: Vec<usize>,
     rest: usize,
     clone_num: usize,
+    portals: Vec<Pos>,
 
     hist: Vec<Diff>,
     diff: Diff,
@@ -588,10 +603,12 @@ impl State {
                 y,
                 manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
                 prios: 0,
+                use_portal: false,
             }],
             items: vec![0; 6 + 1],
             rest: 0,
             clone_num,
+            portals: vec![],
 
             hist: vec![],
             diff: Diff::default(),
@@ -609,6 +626,7 @@ impl State {
             y,
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
             prios: 0,
+            use_portal: false,
         });
     }
 
@@ -732,8 +750,8 @@ impl State {
                     self.clone_num -= 1;
                 }
 
-                if item == 1 {
-                    // eprintln!("**** GET ARM ****");
+                if item == 5 {
+                    self.robots[i].use_portal = true;
                 }
             }
         }
@@ -1026,10 +1044,13 @@ fn solve(
                         // }
 
                         let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
-                        cmds.push(Command::Move(
-                            nx - state.robots[i].x,
-                            ny - state.robots[i].y,
-                        ));
+                        let dx = nx - state.robots[i].x;
+                        let dy = ny - state.robots[i].y;
+                        if dx.abs() + dy.abs() == 1 {
+                            cmds.push(Command::Move(dx, dy));
+                        } else {
+                            cmds.push(Command::Teleport(nx, ny));
+                        }
                         state.move_to(nx, ny, i, false);
                     }
                     continue;
@@ -1040,10 +1061,13 @@ fn solve(
 
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
-                    cmds.push(Command::Move(
-                        nx - state.robots[i].x,
-                        ny - state.robots[i].y,
-                    ));
+                    let dx = nx - state.robots[i].x;
+                    let dy = ny - state.robots[i].y;
+                    if dx.abs() + dy.abs() == 1 {
+                        cmds.push(Command::Move(dx, dy));
+                    } else {
+                        cmds.push(Command::Teleport(nx, ny));
+                    }
                     state.move_to(nx, ny, i, false);
                     continue;
                 }
@@ -1060,7 +1084,7 @@ fn solve(
                     }
                     let item = state.bd[cy as usize][cx as usize].item();
                     // 使える奴だけ
-                    if item == Some(1) {
+                    if item == Some(1) || item == Some(5) {
                         // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
                         // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
                         state.move_to(cx, cy, i, true);
@@ -1074,7 +1098,13 @@ fn solve(
                     // state.dump();
                     continue;
                 }
+            }
 
+            if state.robots[i].use_portal && state.items[5] > 0 {
+                state.robots[i].use_portal = false;
+                state.portals.push((state.robots[i].x, state.robots[i].y));
+                cmds.push(Command::SetPortal);
+                continue;
             }
 
             let n = nearest(&state, i, |c| {
@@ -1140,7 +1170,11 @@ fn solve(
             // dbg!((rot_cnt, &state.manips));
 
             // 移動
-            cmds.push(Command::Move(dx, dy));
+            if dx.abs() + dy.abs() == 1 {
+                cmds.push(Command::Move(dx, dy));
+            } else {
+                cmds.push(Command::Teleport(nx, ny));
+            }
             state.move_to(nx, ny, i, true);
 
             // eprintln!("{}", &encode_commands(&ret));
