@@ -10,7 +10,7 @@
 #include<cmath>
 
 #define DPMAX 1000000
-#define PROBMAX 2
+#define PROBMAX 300
 
 using namespace std;
 
@@ -105,7 +105,7 @@ void input(string solutionPath, string probsizePath){
   inputProbSize(probsizePath);
 }
 
-void setupValue(){
+void setupValue_selfratio(){
   for(auto i: testcases){
     if(i.cost == 0){
       if (baseScore.find(i.probID) != baseScore.end()){
@@ -125,8 +125,12 @@ void setupValue(){
 
 }
 
+void setupValue_prevbestratio(){
+
+}
+
 int solve(int cost){
-  setupValue();
+  setupValue_selfratio();
   ofstream ofs;
   for(int i=0;i<=cost;i++){
     dp[i][0] = -1.0;
@@ -138,7 +142,7 @@ int solve(int cost){
   int now=0;
 
   for(int i=1;i<=PROBMAX;i++){
-
+    cerr<<i<<endl;
     string probIDstr = to_string(i);
     while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
     probIDstr = "prob-"+probIDstr;
@@ -151,7 +155,7 @@ int solve(int cost){
       for(int j=0;j<=cost;j++){
         int solutionCost = testcases[solutionPointer].cost;
         double solutionValue = testcases[solutionPointer].value;
-        if((dp[j][now] >= -0.1) && (j+solutionCost <= cost)){
+        if((dp[j][now] > -1) && (j+solutionCost <= cost)){
           if(dp[j+solutionCost][now^1] < dp[j][now]+solutionValue){
             dp[j+solutionCost][now^1] = dp[j][now]+solutionValue;
             updated[j+solutionCost] = solutionPointer;
@@ -164,6 +168,7 @@ int solve(int cost){
     for(int j=0;j<=cost;j++) ofs<<updated[j]<<" ";ofs<<endl;
     ofs.close();
     now^=1;
+    for(int j=0;j<=cost;j++) dp[j][now^1] = -1;
   }
   return now;
 }
