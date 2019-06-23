@@ -21,24 +21,24 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
 #[derive(Debug, StructOpt)]
 struct SolverOption {
-    /// モップのサイズを増やすかどうか
-    #[structopt(long = "increase-mop")]
-    increase_mop: bool,
-
     /// 島のサイズの上限
     #[structopt(long = "island-threshold", default_value = "50")]
     island_size_threshold: i64,
 
+    /// モップのサイズを増やすかどうか
+    #[structopt(short = "A", long = "increase-mop")]
+    increase_mop: bool,
+
     /// クローンされたやつがいろんな方向向くやつ
-    #[structopt(long = "change-clone-dir")]
+    #[structopt(short = "B", long = "change-clone-dir")]
     change_clone_dir: bool,
 
     /// 隣接したアイテムをスルーせずにとる（使えるものだけ）
-    #[structopt(long = "aggressive-item")]
+    #[structopt(short = "C", long = "aggressive-item")]
     aggressive_item: bool,
 
     /// ポータルをクローンの次に優先して取りに行く
-    #[structopt(long = "aggressive-teleport")]
+    #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
 
     /// 0 以外も C を取りに行く && 産み落とす
@@ -530,7 +530,6 @@ fn nearest_cmd(state: &State, i: usize) -> Option<Command> {
         return None;
     }
 
-
     let (mut tx, mut ty) = found.unwrap();
 
     // let mut route_len = 0;
@@ -549,7 +548,11 @@ fn nearest_cmd(state: &State, i: usize) -> Option<Command> {
 }
 */
 
-fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(i64, i64)> {
+fn nearest(
+    state: &State,
+    i: usize,
+    f: impl Fn(i64, i64, Cell) -> bool + Copy,
+) -> Option<(i64, i64)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -557,7 +560,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
     let orig_y = state.robots[i].y;
     let bd = &state.bd;
 
-    if f(bd[orig_y as usize][orig_x as usize]) {
+    if f(orig_x, orig_y, bd[orig_y as usize][orig_x as usize]) {
         return Some((orig_x, orig_y));
     }
 
@@ -605,7 +608,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
             break None;
         }
         let (cx, cy) = q.pop_front().unwrap();
-        if f(bd[cy as usize][cx as usize]) {
+        if f(cx, cy, bd[cy as usize][cx as usize]) {
             break Some((cx, cy));
         }
 
@@ -1248,13 +1251,7 @@ fn find_x_closest_bot(state: &State) -> Option<usize> {
     }
 }
 
-fn solve(
-    bd_org: &Board,
-    sx: i64,
-    sy: i64,
-    bought_boosters: &str,
-    opt: &SolverOption,
-) -> Solution {
+fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
@@ -1380,7 +1377,7 @@ fn solve(
                         state.spawn_bot = None;
                     }
                 } else {
-                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1396,7 +1393,7 @@ fn solve(
             if i == 0 {
                 if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1407,8 +1404,11 @@ fn solve(
                     state.move_to(nx, ny, i, false);
                     continue;
                 }
-                if opt.aggressive_teleport && state.portal_num > 0 && state.robots[i].num_collected_portal == 0 {
-                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
+                if opt.aggressive_teleport
+                    && state.portal_num > 0
+                    && state.robots[i].num_collected_portal == 0
+                {
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
@@ -1458,7 +1458,7 @@ fn solve(
                 continue;
             }
 
-            let n = nearest(&state, i, |c| {
+            let n = nearest(&state, i, |_, _, c| {
                 !c.is_painted()
                     && if state.robots[i].prios > 0 {
                         c.prio() == Some(i)
@@ -1611,11 +1611,9 @@ fn solve_lightning(
         bought_boosters,
         solver_option,
     );
-    eprintln!(
-        "Score: {}, (options: {:?})", ans.len(), solver_option);
 
     let score = ans.len() as i64;
-    // eprintln!("Score: {}", score);
+    eprintln!("Score: {}, (options: {:?})", score, solver_option);
 
     if name != "stdin" {
         let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
