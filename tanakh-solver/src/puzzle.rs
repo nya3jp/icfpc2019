@@ -1,4 +1,6 @@
-use super::{Result, Pos, VECTS, parse_pos_list};
+use super::{Result, Pos, parse_pos_list};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 #[derive(Debug)]
 pub struct PuzzleInput {
@@ -106,19 +108,19 @@ fn rec_gen(bd: &mut Vec<Vec<char>>, x: i64, y: i64) -> bool {
 
     let mut ord = [0, 1, 2, 3];
 
-    use rand::seq::SliceRandom;
-    use rand::thread_rng;
     let mut rng = thread_rng();
     ord.shuffle(&mut rng);
 
+    let vect = &[(0, 1), (1, 0), (0, -1), (-1, 0)];
+
     for &o in ord.iter() {
-        let (dx, dy) = VECTS[0][o];
+        let (dx, dy) = vect[o];
 
         let nx = x + dx;
         let ny = y + dy;
 
         let mut ok = true;
-        for &(ex, ey) in VECTS[0].iter() {
+        for &(ex, ey) in vect.iter() {
             let mx = nx + ex;
             let my = ny + ey;
 
