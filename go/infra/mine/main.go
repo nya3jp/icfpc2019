@@ -156,9 +156,12 @@ func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ 
 		return "", "", nil
 	}
 
+	m.l.Logf("Puzzle solvers: %s", strings.Join(names, ", "))
+
 	type result struct {
 		name     string
 		solution string
+		runtime  time.Duration
 		err      error
 	}
 
@@ -167,12 +170,14 @@ func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ 
 	for _, name := range names {
 		name := name
 		go func() {
+			start := time.Now()
 			solution, err := m.runPuzzleSolver(ctx, name)
+			runtime := time.Since(start)
 			if err != nil && ctx.Err() == nil {
 				// Retry automatically since puzzle solutions are so important.
 				solution, err = m.runPuzzleSolver(ctx, name)
 			}
-			ch <- &result{name, solution, err}
+			ch <- &result{name, solution, runtime, err}
 		}()
 	}
 
@@ -181,7 +186,7 @@ func (m *miner) runPuzzleSolvers(ctx context.Context) (name, solution string, _ 
 		select {
 		case r := <-ch:
 			if r.err == nil {
-				m.l.Logf("Puzzle solver %s passed: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, bucket, m.args.block, r.name)
+				m.l.Logf("Puzzle solver %s passed in %v (<https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt|Output>)", r.name, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
 				return r.name, r.solution, nil
 			}
 			m.l.Logf("Warning: Failed to run the puzzle solver %s: %v", r.name, r.err)
@@ -207,7 +212,6 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/solvers/puzzle/%s/", bucket, m.args.block, name),
 	}
-	m.l.Logf("Running the puzzle solver %s", name)
 	if err := m.runTask(ctx, t); err != nil {
 		return "", err
 	}
@@ -227,10 +231,13 @@ func (m *miner) runTaskSolvers(ctx context.Context) (name, solution string, _ er
 		return "", "", nil
 	}
 
+	m.l.Logf("Task solvers: %s", strings.Join(names, ", "))
+
 	type result struct {
 		name     string
 		solution string
 		score    int
+		runtime  time.Duration
 		err      error
 	}
 
@@ -239,8 +246,10 @@ func (m *miner) runTaskSolvers(ctx context.Context) (name, solution string, _ er
 	for _, name := range names {
 		name := name
 		go func() {
+			start := time.Now()
 			sol, score, err := m.runTaskSolver(ctx, name)
-			ch <- &result{name, sol, score, err}
+			runtime := time.Since(start)
+			ch <- &result{name, sol, score, runtime, err}
 		}()
 	}
 
@@ -253,7 +262,7 @@ loop:
 			if r.err != nil {
 				m.l.Logf("Warning: Failed to run the task solver %s: %v", r.name, r.err)
 			} else {
-				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
+				m.l.Logf("Task solver %s passed with score %d in %v (<https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt|Output>)", r.name, r.score, r.runtime.Round(time.Second), bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -284,7 +293,6 @@ grep -q Success $OUT_DIR/validation.txt
 		},
 		Out: fmt.Sprintf("gs://%s/results/%d/solvers/task/%s/", bucket, m.args.block, name),
 	}
-	m.l.Logf("Running the task solver %s", name)
 	if err := m.runTask(ctx, t); err != nil {
 		return "", 0, err
 	}
