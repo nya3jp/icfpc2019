@@ -2,7 +2,7 @@ use chrono::prelude::*;
 use num_rational::Rational;
 use regex::Regex;
 use std::cmp::{max, min};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque, HashMap};
 use std::env;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -492,7 +492,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
             ty = n.1;
         }
     */
-
+    /*
     let mut best_score = (0xffffffff, 0xffffffff);
     let mut ret = None;
 
@@ -529,6 +529,87 @@ fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(
     }
 
     ret
+     */
+
+    let orig_x = state.robots[i].x;
+    let orig_y = state.robots[i].y;
+    let bd = &state.bd;
+
+    if f(bd[orig_y as usize][orig_x as usize]) {
+        return Some((orig_x, orig_y));
+    }
+
+    let mut q = VecDeque::new();
+    let mut backtrack = HashMap::new();
+    // Initialize starting set.
+    let vect = &VECTS[i % VECTS.len()];
+    for &(dx, dy) in vect.iter() {
+        let cx = orig_x + dx;
+        let cy = orig_y + dy;
+
+        if cx < 0 || w <= cx || cy < 0 || h <= cy {
+            continue;
+        }
+        if bd[cy as usize][cx as usize].is_wall() {
+            continue;
+        }
+        q.push_back((cx, cy));
+        backtrack.insert((cx, cy), (orig_x, orig_y));
+    }
+
+    // Portals.
+    for &(x, y) in state.portals.iter() {
+        q.push_back((x, y));
+        backtrack.insert((x, y), (orig_x, orig_y));
+    }
+
+    let found =
+        loop {
+            if q.is_empty() {
+                break None;
+            }
+            let (cx, cy) = q.pop_front().unwrap();
+            if f(bd[cy as usize][cx as usize]) {
+                break Some((cx, cy));
+            }
+
+            for &(dx, dy) in vect.iter() {
+                let nx = cx + dx;
+                let ny = cy + dy;
+
+                if nx < 0 || w <= nx || ny < 0 || h <= ny {
+                    // Out of map.
+                    continue;
+                }
+                if bd[ny as usize][nx as usize].is_wall() {
+                    continue;
+                }
+                if backtrack.contains_key(&(nx, ny)) {
+                    // Already visited.
+                    continue;
+                }
+                backtrack.insert((nx, ny), (cx, cy));
+                q.push_back((nx, ny));
+            }
+        };
+
+    if found.is_none() {
+        return None;
+    }
+
+    let (mut cx, mut cy) = found.unwrap();
+    loop {
+        match backtrack.get(&(cx, cy)) {
+            Some(&(nx, ny)) => {
+                if nx == orig_x && ny == orig_y {
+                    return Some((cx, cy));
+                }
+                cx = nx;
+                cy = ny;
+            }
+            None => unreachable!()
+        }
+    }
 }
 
 fn nearest_empty_dist(
