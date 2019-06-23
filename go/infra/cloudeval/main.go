@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -108,26 +107,30 @@ func doMain() error {
 
 	logf("Running %d jobs...", len(args.problems))
 
-	var wg sync.WaitGroup
-	wg.Add(len(args.problems))
+	ch := make(chan time.Duration, len(args.problems))
 	for _, problem := range args.problems {
 		problem := problem
 		go func() {
-			defer wg.Done()
-			if err := evaluate(ctx, sc, tc, problem, args.purchase, args.solver, args.timeout); err != nil {
+			runtime, err := evaluate(ctx, sc, tc, problem, args.purchase, args.solver, args.timeout)
+			if err != nil {
 				logf("ERROR: %s: %v", problem, err)
 			}
+			ch <- runtime
 		}()
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	wg.Wait()
+	var total time.Duration
+	for range args.problems {
+		t := <-ch
+		total += t
+	}
 
-	logf("Done")
+	logf("Finished! Total %v (%.1f JPY)", total.Round(time.Second), total.Seconds()*0.000029*107.32)
 	return nil
 }
 
-func evaluate(ctx context.Context, sc *storage.Client, tc *tasklet.Client, problem, purchase, solver string, timeout time.Duration) (retErr error) {
+func evaluate(ctx context.Context, sc *storage.Client, tc *tasklet.Client, problem, purchase, solver string, timeout time.Duration) (runtime time.Duration, retErr error) {
 	problemPlus := problem
 	if purchase != "" {
 		problemPlus += "_" + purchase
@@ -156,25 +159,25 @@ if grep -q ERROR $OUT_DIR/validation.txt; then exit 111; fi
 		Out: fmt.Sprintf("gs://sound-type-system/evals/%s/%s/", solver, problemPlus),
 	}
 	if err := tc.Run(ctx, task); err != nil {
-		return err
+		return 0, err
 	}
 
-	runtime := time.Since(start)
+	runtime = time.Since(start)
 
 	obj := sc.Bucket("sound-type-system").Object(fmt.Sprintf("evals/%s/%s/validation.txt", solver, problemPlus))
 	r, err := obj.NewReader(ctx)
 	if err != nil {
-		return err
+		return runtime, err
 	}
 	defer r.Close()
 
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
-		return err
+		return runtime, err
 	}
 
 	logf("PASS: %s (%v): %s", problem, runtime.Round(time.Second), strings.TrimSpace(string(b)))
-	return nil
+	return runtime, nil
 }
 
 func log(args ...interface{}) {
