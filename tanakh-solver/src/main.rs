@@ -40,6 +40,10 @@ struct SolverOption {
     /// ポータルをクローンの次に優先して取りに行く
     #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
+
+    /// 0 以外も C を取りに行く && 産み落とす
+    #[structopt(long = "spawn-delegate")]
+    spawn_delegate: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -715,6 +719,8 @@ struct State {
     portal_num: usize,
     portals: Vec<Pos>,
 
+    spawn_bot: Option<usize>,
+
     hist: Vec<Diff>,
     diff: Diff,
     island_size_threshold: i64,
@@ -778,6 +784,7 @@ impl State {
             clone_num,
             portal_num,
             portals: vec![],
+            spawn_bot: None,
 
             hist: vec![],
             diff: Diff::default(),
@@ -1188,6 +1195,62 @@ fn test_pass_cells() {
     assert_eq!(pass_cells(0, 0, 1, 3), vec![(0, 0), (0, 1), (1, 2), (1, 3)]);
 }
 
+fn find_x_closest_bot(state: &State) -> Option<usize> {
+    let h = state.bd.len() as i64;
+    let w = state.bd[0].len() as i64;
+    let bd = &state.bd;
+
+    let mut q = VecDeque::new();
+    let mut visited = HashSet::new();
+    for y in 0..bd.len() {
+        for x in 0..bd[y].len() {
+            if bd[y][x].item() == Some(4) {
+                q.push_back((x as i64, y as i64));
+                visited.insert((x as i64, y as i64));
+            }
+        }
+    }
+
+    let mut goal = HashMap::new();
+    for i in 0..state.robots.len() {
+        // TODO check if robot is capturing C.
+        goal.insert((state.robots[i].x as i64, state.robots[i].y as i64), i);
+    }
+    if goal.is_empty() {
+        return None;
+    }
+    let goal = goal;
+    let vect = &VECTS1[0];
+
+    loop {
+        if q.is_empty() {
+            return None;
+        }
+        let (cx, cy) = q.pop_front().unwrap();
+        if let Some(&i) = goal.get(&(cx, cy)) {
+            return Some(i);
+        }
+
+        for &(dx, dy) in vect.iter() {
+            let nx = cx + dx;
+            let ny = cy + dy;
+
+            if nx < 0 || w <= nx || ny < 0 || h <= ny {
+                // Out of map.
+                continue;
+            }
+            if bd[ny as usize][nx as usize].is_wall() {
+                continue;
+            }
+            if visited.contains(&(nx, ny)) {
+                continue;
+            }
+            visited.insert((nx, ny));
+            q.push_back((nx, ny));
+        }
+    }
+}
+
 fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
@@ -1274,48 +1337,61 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            if i == 0 {
-                if state.items[6] > 0 {
-                    if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
-                        == Some(4)
-                    {
-                        // eprintln!("*****CLONE*****");
+            if state.items[6] > 0 && state.spawn_bot == None {
+                if opt.spawn_delegate {
+                    state.spawn_bot = find_x_closest_bot(&state);
+                } else {
+                    state.spawn_bot = Some(0);
+                }
+            }
 
-                        cmds.push(Command::Clone);
-                        state.add_robot(state.robots[i].x, state.robots[i].y);
+            if Some(i) == state.spawn_bot {
+                if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+                    == Some(4)
+                {
+                    // eprintln!("*****CLONE*****");
 
-                        if opt.change_clone_dir {
-                            let new_robot_id = state.robots.len() - 1;
-                            match new_robot_id % 4 {
-                                0 => {}
-                                1 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                }
-                                2 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                    state.robots[new_robot_id].queue.push(Command::Turn(true));
-                                }
-                                3 => {
-                                    state.robots[new_robot_id].queue.push(Command::Turn(false));
-                                }
-                                _ => unreachable!(),
+                    cmds.push(Command::Clone);
+                    state.add_robot(state.robots[i].x, state.robots[i].y);
+
+                    if opt.change_clone_dir {
+                        let new_robot_id = state.robots.len() - 1;
+                        match new_robot_id % 4 {
+                            0 => {}
+                            1 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
                             }
+                            2 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
+                                state.robots[new_robot_id].queue.push(Command::Turn(true));
+                            }
+                            3 => {
+                                state.robots[new_robot_id].queue.push(Command::Turn(false));
+                            }
+                            _ => unreachable!(),
                         }
-
-                        state.items[6] -= 1;
-                    } else {
-                        let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap();
-                        let dx = nx - state.robots[i].x;
-                        let dy = ny - state.robots[i].y;
-                        if dx.abs() + dy.abs() == 1 {
-                            cmds.push(Command::Move(dx, dy));
-                        } else {
-                            cmds.push(Command::Teleport(nx, ny));
-                        }
-                        state.move_to(nx, ny, i, false);
                     }
-                    continue;
-                } else if state.clone_num > 0 {
+
+                    state.items[6] -= 1;
+                    if state.items[6] == 0 {
+                        state.spawn_bot = None;
+                    }
+                } else {
+                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(4)).unwrap();
+                    let dx = nx - state.robots[i].x;
+                    let dy = ny - state.robots[i].y;
+                    if dx.abs() + dy.abs() == 1 {
+                        cmds.push(Command::Move(dx, dy));
+                    } else {
+                        cmds.push(Command::Teleport(nx, ny));
+                    }
+                    state.move_to(nx, ny, i, false);
+                }
+                continue;
+            }
+
+            if i == 0 {
+                if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap();
                     let dx = nx - state.robots[i].x;
