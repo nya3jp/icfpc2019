@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 type Task struct {
@@ -25,6 +27,8 @@ type Client struct {
 	execKey string
 }
 
+var errQuota = errors.New("server returned 500 error (quota limit?)")
+
 func NewClient(cl *http.Client, execKey string) *Client {
 	return &Client{cl, execKey}
 }
@@ -35,6 +39,20 @@ func (c *Client) Run(ctx context.Context, t *Task) error {
 		return err
 	}
 
+	if err := c.runNoRetry(ctx, body); err == errQuota {
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return c.runNoRetry(ctx, body)
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) runNoRetry(ctx context.Context, body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, "https://tasklet-r336oz7mza-uc.a.run.app/exec", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -46,7 +64,9 @@ func (c *Client) Run(ctx context.Context, t *Task) error {
 	}
 	defer res.Body.Close()
 
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode == http.StatusInternalServerError {
+		return errQuota
+	} else if res.StatusCode != http.StatusOK {
 		b, _ := ioutil.ReadAll(res.Body)
 		return fmt.Errorf("exec returned %d: %s", res.StatusCode, string(b))
 	}

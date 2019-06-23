@@ -77,36 +77,39 @@ end
 
 current_block = get_current_block_num
 
-# Check if the data was already fetched
-# if JSON.parse(File.read('balances.json')).length == (current_block - FIRST_VALID_BLOCK + 1)
-#   puts 'Already fetched. Do nothing'
-#   return
-# end
+cached_tasks = JSON.parse(File.read('tasks.json'))
+cached_puzzle = JSON.parse(File.read('puzzle.json'))
+cached_balances = JSON.parse(File.read('balances.json'))
+cached_excluded = JSON.parse(File.read('excluded.json'))
 
-tasks = []
-puzzles = []
-balances = []
-excluded = []
 (FIRST_VALID_BLOCK..current_block).each{|block|
-  tasks.push(fetch_task(block))
-  puzzles.push(fetch_puzzle(block))
-  balances.push(fetch_balances(block))
-  excluded.push(get_excluded(block))
+  if cached_tasks.length < (block - FIRST_VALID_BLOCK)
+    cached_tasks.push(fetch_task(block))
+  end
+  if cached_puzzle.length < (block - FIRST_VALID_BLOCK)
+    cached_puzzle.push(fetch_puzzle(block))
+  end
+  if cached_balances.length < (block - FIRST_VALID_BLOCK)
+    cached_balances.push(fetch_balances(block))
+  end
+  if cached_excluded.length < (block - FIRST_VALID_BLOCK)
+    cached_excluded.push(get_excluded(block))
+  end
 }
-File.write('tasks.json', JSON.pretty_generate(tasks))
-File.write('puzzle.json', JSON.pretty_generate(puzzles))
-File.write('balances.json', JSON.pretty_generate(balances))
-File.write('excluded.json', JSON.pretty_generate(excluded))
+File.write('tasks.json', JSON.pretty_generate(cached_tasks))
+File.write('puzzle.json', JSON.pretty_generate(cached_puzzle))
+File.write('balances.json', JSON.pretty_generate(cached_balances))
+File.write('excluded.json', JSON.pretty_generate(cached_excluded))
 
 rankings = []
-((FIRST_VALID_BLOCK+1)..current_block).each{|block|
+((FIRST_VALID_BLOCK+1)..(current_block-1)).each{|block|
   block -= 3
-  before = balances[block - 1]
-  after = balances[block]
+  before = cached_balances[block - 1]
+  after = cached_balances[block]
   ranking = []
   after.each{|key, _|
     diff = after[key].to_i - before[key].to_i
-    diff -= 2000 if excluded[block] == key
+    diff -= 2000 if cached_excluded[block] == key
     ranking.push({key => diff})
   }
   ranking.sort_by!{|v| -v.values[0] }

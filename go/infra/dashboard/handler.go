@@ -4,12 +4,15 @@ import (
 	"archive/zip"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -30,6 +33,7 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	r.Handle("GET", "/dashboard", h.handleIndex)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
 	r.Handle("GET", "/dashboard/zip", h.handleZip)
+	r.Handle("GET", "/dashboard/csv", h.handleCSV)
 	r.ServeFiles("/static/*filepath", http.Dir("infra/dashboard/static"))
 	return r
 }
@@ -77,9 +81,20 @@ type solution struct {
 	ID        int
 	Solver    string
 	Problem   string
+	Purchase  string
+	Size      Size
 	Evaluator string
 	Score     int32
+	BaseScore int32
 	Submitted time.Time
+}
+
+func (s *solution) RatioStr() string {
+	return fmt.Sprintf("%.3f", float64(s.BaseScore)/float64(s.Score))
+}
+
+func (s *solution) Weight() int {
+	return int(math.Ceil(1000 * math.Log2(float64(s.Size.X)*float64(s.Size.Y))))
 }
 
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
@@ -87,6 +102,7 @@ var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
 type indexValues struct {
 	Purchase      string
 	BestSolutions []*solution
+	Purchases     []string
 }
 
 func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -98,9 +114,32 @@ func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprout
 			return err
 		}
 
+		bss := ss
+		if purchase != "" {
+			bss, err = h.queryBestSolutions(ctx, "")
+			if err != nil {
+				return err
+			}
+		}
+		smap := make(map[string]*solution)
+		for _, s := range ss {
+			smap[s.Problem] = s
+		}
+		for _, bs := range bss {
+			if s, ok := smap[bs.Problem]; ok {
+				s.BaseScore = bs.Score
+			}
+		}
+
+		ps, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
 		v := &indexValues{
 			Purchase:      purchase,
 			BestSolutions: ss,
+			Purchases:     ps,
 		}
 		return indexTmpl.Execute(w, v)
 	})
@@ -113,6 +152,7 @@ type problemValues struct {
 	Purchase     string
 	Solutions    []*solution
 	BestSolution *solution
+	Purchases    []string
 }
 
 func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -126,6 +166,11 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			return err
 		}
 
+		ps, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
 		var bs *solution
 		if len(ss) > 0 {
 			bs = ss[0]
@@ -135,6 +180,7 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			Purchase:     purchase,
 			Solutions:    ss,
 			BestSolution: bs,
+			Purchases:    ps,
 		}
 		return problemTmpl.Execute(w, v)
 	})
@@ -202,12 +248,42 @@ func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter
 	})
 }
 
+func (h *handler) handleCSV(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	handle(w, r, func(ctx context.Context) error {
+		purchases, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
+		var bests []*solution
+		for _, p := range purchases {
+			ss, err := h.queryBestSolutions(ctx, p)
+			if err != nil {
+				return err
+			}
+			bests = append(bests, ss...)
+		}
+
+		now := time.Now().In(jst)
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"solutions-%s.csv\"", now.Format("20060102-150405")))
+		w.WriteHeader(http.StatusOK)
+		cw := csv.NewWriter(w)
+		for _, s := range bests {
+			cw.Write([]string{s.Problem, s.Purchase, strconv.Itoa(s.ID), s.Solver, strconv.Itoa(int(s.Score))})
+		}
+		cw.Flush()
+		return nil
+	})
+}
+
 func (h *handler) queryBestSolutions(ctx context.Context, purchase string) ([]*solution, error) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT
   id,
   solver,
   problem,
+  purchase,
   evaluator,
   score,
   submitted
@@ -224,11 +300,11 @@ INNER JOIN (
     WHERE valid AND purchase = ?
     GROUP BY problem
   ) t1 USING (problem)
-  WHERE score = min_score
+  WHERE valid AND purchase = ? AND score = min_score
   GROUP BY problem
 ) t2 USING (id)
 ORDER BY problem ASC
-`, purchase)
+`, purchase, purchase)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +318,7 @@ SELECT
   id,
   solver,
   problem,
+  purchase,
   evaluator,
   score,
   submitted
@@ -263,10 +340,35 @@ func scanSolutions(rows *sql.Rows) ([]*solution, error) {
 	var ss []*solution
 	for rows.Next() {
 		var s solution
-		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
+		if err := rows.Scan(&s.ID, &s.Solver, &s.Problem, &s.Purchase, &s.Evaluator, &s.Score, &s.Submitted); err != nil {
 			return nil, err
 		}
+		s.Size = problemSizes[s.Problem]
 		ss = append(ss, &s)
 	}
 	return ss, nil
+}
+
+func (h *handler) queryPurchases(ctx context.Context) ([]string, error) {
+	rows, err := h.db.QueryContext(ctx, `
+SELECT DISTINCT
+  purchase
+FROM solutions
+WHERE valid
+ORDER BY purchase ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var purchases []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		purchases = append(purchases, p)
+	}
+	return purchases, nil
 }

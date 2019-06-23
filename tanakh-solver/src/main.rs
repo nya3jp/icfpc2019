@@ -297,7 +297,7 @@ fn normalize(input: &mut Input) -> (i64, i64) {
     let max_x = *input.map.iter().map(|(x, y)| x).max().unwrap();
     let min_y = *input.map.iter().map(|(x, y)| y).min().unwrap();
     let max_y = *input.map.iter().map(|(x, y)| y).max().unwrap();
-
+/*
     for i in 0..input.map.len() {
         input.map[i].0 -= min_x;
         input.map[i].1 -= min_y;
@@ -317,8 +317,10 @@ fn normalize(input: &mut Input) -> (i64, i64) {
         input.boosters[i].1 .0 -= min_x;
         input.boosters[i].1 .1 -= min_y;
     }
-
     (max_x - min_x, max_y - min_y)
+*/
+
+    (max_x, max_y)
 }
 
 fn print_bd(bd: &Board) {
@@ -726,6 +728,7 @@ impl State {
         }
         if !has_mystery {
             clone_num = 0;
+            items[6] = 0;
         }
 
         let mut ret = State {
@@ -1166,10 +1169,11 @@ fn solve(
 
     let mut fin = false;
 
+    let mut steps = 0;
     while !fin {
         let mut cmds = vec![];
         let robot_num = state.robots.len();
-
+        steps += 1;
         let shortest_mop = state
             .robots
             .iter()
@@ -1405,6 +1409,10 @@ fn solve(
             state.move_to(nx, ny, i, true);
 
             // eprintln!("{}", &encode_commands(&ret));
+        }
+
+        if steps == 3491 || steps == 3492 {
+            eprintln!("Cmds: {}, {:?}", steps, cmds);
         }
 
         // state.dump();
