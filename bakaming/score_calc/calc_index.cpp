@@ -64,7 +64,6 @@ bool operator < (const TestCase a, const TestCase b){
 
 vector<TestCase> testcases;
 map<string, double> size;
-map<string, int> baseScore;
 double dp[DPMAX][2];
 int updated[DPMAX];
 int prevstring[DPMAX];
@@ -106,6 +105,7 @@ void input(string solutionPath, string probsizePath){
 }
 
 void setupValue_selfratio(){
+  map<string, int> baseScore;
   for(auto i: testcases){
     if(i.cost == 0){
       if (baseScore.find(i.probID) != baseScore.end()){
@@ -126,15 +126,40 @@ void setupValue_selfratio(){
 }
 
 void setupValue_prevbestratio(){
+  map<string, int> baseScore;
+  string tmpline;
+  ifstream ifs;
+  ifs.open("bestscore.txt");
+  while(getline(ifs,tmpline)){
+    int prob,steps;
+    char str[10];
+    sscanf(tmpline.c_str(), "%d, %d, %s",&prob, &steps, str);
+    string probIDstr = to_string(prob);
+    while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
+    probIDstr = "prob-"+probIDstr;
+    //cout<<prob<<" "<<steps<<" "<<str<<" "<<probIDstr<<endl;
+    if (baseScore.find(probIDstr) != baseScore.end()){
+      baseScore[probIDstr] = min(baseScore[probIDstr], steps);
+    } else {
+      baseScore[probIDstr] = steps;
+    }
+  }
 
+  for(auto &i: testcases){
+    double value = ceil(size[i.probID]);
+    value -= ceil(size[i.probID]*i.step/baseScore[i.probID]);
+    i.value = value;
+    //cout<<i.print_debug()<<endl;
+  }
 }
 
 int solve(int cost){
-  setupValue_selfratio();
+  //setupValue_selfratio();
+  setupValue_prevbestratio();
   ofstream ofs;
   for(int i=0;i<=cost;i++){
-    dp[i][0] = -1.0;
-    dp[i][1] = -1.0;
+    dp[i][0] = -5000000.0;
+    dp[i][1] = -5000000.0;
   }
   dp[0][0] = 0.0;
 
@@ -155,7 +180,7 @@ int solve(int cost){
       for(int j=0;j<=cost;j++){
         int solutionCost = testcases[solutionPointer].cost;
         double solutionValue = testcases[solutionPointer].value;
-        if((dp[j][now] > -1) && (j+solutionCost <= cost)){
+        if((dp[j][now] > -5000000.0) && (j+solutionCost <= cost)){
           if(dp[j+solutionCost][now^1] < dp[j][now]+solutionValue){
             dp[j+solutionCost][now^1] = dp[j][now]+solutionValue;
             updated[j+solutionCost] = solutionPointer;
@@ -168,7 +193,7 @@ int solve(int cost){
     for(int j=0;j<=cost;j++) ofs<<updated[j]<<" ";ofs<<endl;
     ofs.close();
     now^=1;
-    for(int j=0;j<=cost;j++) dp[j][now^1] = -1;
+    for(int j=0;j<=cost;j++) dp[j][now^1] = -5000000.0;
   }
   return now;
 }
