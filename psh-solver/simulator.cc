@@ -190,7 +190,7 @@ bool IsVisible(const Point& origin, const Point& target,
   return true;
 }
 
-bool IsPossibleToExtendManipualtor(
+bool IsPossibleToExtendManipulator(
     const Wrapper& wrapper, const Point& p) {
   constexpr Point kDirs[] = {
     {0, 1}, {0, -1}, {1, 0}, {-1, 0},
@@ -498,11 +498,77 @@ void Map::Unfill(const std::vector<std::pair<Point, Cell>>& cells) {
   }
 }
 
-void Map::Run(int index, const Instruction& inst) {
+Map::RunResult Map::DryRun(int index, const Instruction& inst) const {
+  if (index >= static_cast<int>(wrappers_.size())) {
+    return RunResult::NO_WRAPPER;
+  }
+
+  const auto& wrapper = wrappers_[index];
+  switch (inst.type) {
+    case Instruction::Type::W:
+      return DryMove(wrapper, Point{0, 1});
+    case Instruction::Type::S:
+      return DryMove(wrapper, Point{0, -1});
+    case Instruction::Type::A:
+      return DryMove(wrapper, Point{-1, 0});
+    case Instruction::Type::D:
+      return DryMove(wrapper, Point{1, 0});
+    case Instruction::Type::Q:
+    case Instruction::Type::E:
+    case Instruction::Type::Z:
+      return RunResult::SUCCESS;
+    case Instruction::Type::B:
+      if (collected_b_ == 0 && wrapper.pending_booster() != Booster::B)
+        return RunResult::NO_BOOSTER;
+      if (!IsPossibleToExtendManipulator(wrapper, inst.arg))
+        return RunResult::BAD_MANIPULATOR_POSITION;
+      return RunResult::SUCCESS;
+    case Instruction::Type::F:
+      if (collected_f_ == 0 && wrapper.pending_booster() != Booster::F)
+        return RunResult::NO_BOOSTER;
+      return RunResult::SUCCESS;
+    case Instruction::Type::L:
+      if (collected_l_ == 0 && wrapper.pending_booster() != Booster::L)
+        return RunResult::NO_BOOSTER;
+      return RunResult::SUCCESS;
+    case Instruction::Type::R: {
+      if (collected_r_ == 0 && wrapper.pending_booster() != Booster::R)
+        return RunResult::NO_BOOSTER;
+      const auto& p = wrapper.point();
+      auto iter = booster_map_.find(p);
+      if (resets_.find(p) != resets_.end() ||
+          (iter != booster_map_.end() && iter->second == Booster::X))
+        return RunResult::BAD_TELEPORT_POSITION;
+      return RunResult::SUCCESS;
+    }
+    case Instruction::Type::T:
+      if (resets_.find(inst.arg) == resets_.end())
+        return RunResult::UNKNOWN_TELEPORT_POSITION;
+      return RunResult::SUCCESS;
+    case Instruction::Type::C: {
+      if (collected_c_ == 0 && wrapper.pending_booster() != Booster::R)
+        return RunResult::NO_BOOSTER;
+      auto iter = booster_map_.find(wrapper.point());
+      if (iter == booster_map_.end() || iter->second != Booster::X)
+        return RunResult::BAD_CLONE_POSITION;
+      return RunResult::SUCCESS;
+    }
+  }
+  return RunResult::UNKNOWN_INSTRUCTION;
+}
+
+Map::RunResult Map::Run(int index, const Instruction& inst) {
+  auto dryrun_result = DryRun(index, inst);
+  if (dryrun_result != RunResult::SUCCESS)
+    return dryrun_result;
+  RunUnsafe(index, inst);
+  return RunResult::SUCCESS;
+}
+
+void Map::RunUnsafe(int index, const Instruction& inst) {
   ++num_steps_;
   BacklogEntry entry;
   entry.set_wrapper_index(index);
-  // TODO record back log.
   CHECK_LT(index, static_cast<int>(wrappers_.size()));
   {
     auto& wrapper = wrappers_[index];
@@ -565,7 +631,7 @@ void Map::Run(int index, const Instruction& inst) {
       case Instruction::Type::B: {
         entry.set_action(BacklogEntry::Action::B);
         CHECK_GT(collected_b_, 0);
-        CHECK(IsPossibleToExtendManipualtor(wrapper, inst.arg));
+        CHECK(IsPossibleToExtendManipulator(wrapper, inst.arg));
         wrapper.AddManipulator(inst.arg);
         --collected_b_;
         Fill(wrapper, &entry);
@@ -703,6 +769,7 @@ void Map::Move(Wrapper* wrapper, const Point& direction,
   CHECK(MoveInternal(wrapper, direction, entry, true));
   entry->set_action(a);
   if (wrapper->fast_count()) {
+    // It is allowed that the second move is impossible.
     if (MoveInternal(wrapper, direction, entry, false)) {
       entry->set_action(aa);
     }
@@ -711,19 +778,11 @@ void Map::Move(Wrapper* wrapper, const Point& direction,
 
 bool Map::MoveInternal(Wrapper* wrapper, const Point& direction,
                        BacklogEntry* entry, bool is_first) {
-  auto p = wrapper->point();
-  p += direction;
-  if (p.x < 0 || static_cast<int>(width_) <= p.x) {
+  RunResult tested = DryMove(*wrapper, direction);
+  if (tested != RunResult::SUCCESS)
     return false;
-  }
-  if (p.y < 0 && static_cast<int>(height_) <= p.y) {
-    return false;
-  }
-  if (wrapper->drill_count() == 0) {
-    if ((*this)[p] == Cell::WALL) {
-      return false;
-    }
-  }
+
+  auto p = wrapper->point() + direction;
   wrapper->set_point(p);
   Fill(*wrapper, entry);
 
@@ -740,6 +799,17 @@ bool Map::MoveInternal(Wrapper* wrapper, const Point& direction,
     }
   }
   return true;
+}
+
+Map::RunResult Map::DryMove(const Wrapper& wrapper, const Point& direction)
+    const {
+  auto p = wrapper.point() + direction;
+  if (!InMap(p)) {
+    return RunResult::OUT_OF_MAP;
+  }
+  if (wrapper.drill_count() == 0 && (*this)[p] == Cell::WALL)
+    return RunResult::WALL;
+  return RunResult::SUCCESS;
 }
 
 void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
