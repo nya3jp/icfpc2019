@@ -24,9 +24,7 @@
 
 #include "gflags/gflags.h"
 #include "glog/logging.h"
-
-#include "fuqinho-solver/geometry.h"
-#include "fuqinho-solver/intersection.h"
+#include "fuqinho-solver/mine.h"
 
 using namespace std;
 
@@ -34,7 +32,6 @@ using namespace std;
 #define FOR(i,b,e) for(int i=(b); i<(int)(e); i++)
 #define EACH(i,c) for(__typeof((c).begin()) i=(c).begin(); i!=(c).end(); i++)
 #define ALL(c) (c).begin(), (c).end()
-#define mp make_pair
 #define dump(x) cerr << #x << " = " << (x) << endl;
 typedef long long ll;
 template<class T1,class T2> ostream& operator<<(ostream& o,const pair<T1,T2>& p){return o<<"("<<p.first<<","<<p.second<<")";}
@@ -45,131 +42,6 @@ template<class T> ostream& operator<<(ostream& o,const vector<vector<T> >& m){o<
 string bitstr(int n,int d=0){string r;for(int i=0;i<d||n>0;++i,n>>=1){r+=(n&1)?"1":"0";}reverse(r.begin(),r.end());return r;}
 
 constexpr int INF = 1e9;
-
-
-#define USE_VERBOSE 1;
-
-
-std::vector<std::string> splitAll(std::string s, std::string t){
-  std::vector<std::string> v;
-  for(size_t p=0; (p = s.find(t)) != s.npos; ){
-    v.push_back(s.substr(0,p));
-    s=s.substr(p+t.size());
-  }
-  v.push_back(s);
-  return v;
-}
-
-std::vector<std::string> split(std::string s, std::string t) {
-  std::vector<std::string> c;
-  size_t p = s.find(t);
-  if(p != s.npos) {
-    c.push_back(s.substr(0,p));
-    s = s.substr(p+t.size());
-  }
-  c.push_back(s);
-
-  return c;
-}
-
-std::tuple<int, int> parsePoint(const std::string &s) {
-  if (s[0] != '(' || s[s.length()-1] != ')'
-      || s.find(',') == std::string::npos) {
-    std::cerr << "Something wrong!!!!!" << std::endl;
-    return std::make_tuple(0, 0);
-  }
-
-  std::vector<std::string> nums = split(s.substr(1, s.length() - 2), ",");
-  return std::make_tuple(atoi(nums[0].c_str()), atoi(nums[1].c_str()));
-}
-
-struct Mine {
-  void parse(const std::string& input) {
-    std::vector<std::string> points = splitAll(input, ")");
-    points.pop_back();
-    for (size_t i = 1; i < points.size(); ++i) {
-      points[i] = points[i].substr(1);
-    }
-
-    std::vector<std::tuple<int, int>> ps;
-    for (size_t i = 0; i < points.size(); ++i) {
-      ps.push_back(parsePoint(points[i] + ")"));
-      max_x = std::max(max_x, std::get<0>(ps[i]));
-      max_y = std::max(max_y, std::get<1>(ps[i]));
-    }
-
-    for (size_t i = 0; i < static_cast<size_t>(max_y); ++i) {
-      mp.push_back(std::vector<int>(max_x, 1));
-    }
-
-    G bounding;
-    for (size_t i = 0; i < ps.size(); ++i) {
-      bounding.push_back(P(std::get<0>(ps[i]),
-                           std::get<1>(ps[i])));
-    }
-
-    for (int i = 0; i < max_y; ++i) {
-      for (int j = 0; j < max_x; ++j) {
-        if (inside(bounding, P((double)j + 0.5, (double)i + 0.5))) {
-          mp[i][j] = 0;
-        }
-      }
-    }
-  }
-
-  void fillPolygon(const std::string& input, int color) {
-    std::vector<std::string> points = splitAll(input, ")");
-    points.pop_back();
-    for (size_t i = 1; i < points.size(); ++i) {
-      points[i] = points[i].substr(1);
-    }
-
-    G poly;
-    for (size_t i = 0; i < points.size(); ++i) {
-      auto p = parsePoint(points[i]+")");
-      poly.push_back(P(std::get<0>(p), std::get<1>(p)));
-    }
-
-    for (int i = 0; i < max_y; ++i) {
-      for (int j = 0; j < max_x; ++j) {
-        if (inside(poly, P((double)j + 0.5, (double)i + 0.5))) {
-          mp[i][j] = color;
-        }
-      }
-    }
-  }
-
-  void parseObstacles(const std::string& input) {
-    std::vector<std::string> obstacle_strs = splitAll(input, ";");
-    for (auto s : obstacle_strs)
-      fillPolygon(s, 1);
-  }
-
-  void setPos(int x, int y) {
-    cur_x = x;
-    cur_y = y;
-    // arms = {{0, 0}, {1, -1}, {1, 0}, {1, 1}};
-    // for (size_t i = 0; i < arms.size(); ++i) {
-    //   int x = cur_x + std::get<0>(arms[i]);
-    //   int y = cur_y + std::get<1>(arms[i]);
-    //   if (x < 0 || x >= max_x) continue;
-    //   if (y < 0 || y >= max_y) continue;
-    //   mp[y][x] = 2;
-    // }
-  }
-
-  // 0 = empty
-  // 1 = obstacle
-  // 2 = wrapped
-  std::vector<std::vector<int>> mp;
-  int cur_x = -1;
-  int cur_y = -1;
-  int max_x = 0;
-  int max_y = 0;
-  std::vector<std::tuple<int, int>> arms;
-  std::string boosters;
-};
-
 const char MOVE_TYPES[] = "WSADEQBF";
 const int DX[] = {1, 0, -1, 0};
 const int DY[] = {0, 1, 0, -1};
@@ -180,13 +52,17 @@ struct Move {
     int dy;
 };
 
+bool operator< (const Move& lhs, const Move& rhs) {
+    return lhs.move_type < rhs.move_type;
+}
+
 struct State {
     std::vector<std::string> map;
     std::vector<std::vector<bool>> painted;
     std::vector<tuple<int, int>> arms;
     int cur_x;
     int cur_y;
-    int B, F;
+    int B, F, L, R, C;
     int tB, tF;
     int gotB, gotF;
 
@@ -194,16 +70,22 @@ struct State {
     int num_unpainted;
     vector<vector<int>> cell_scores;
 
-    State(const Mine& mine) {
+    State(const Mine& mine, const string boosters) {
         int W = mine.max_x, H = mine.max_y;
         cur_x = mine.cur_x;
         cur_y = mine.cur_y;
-        B = 0;
-        F = 0;
+        B = F = L = R = C = 0;
         tB = 0;
         tF = 0;
         gotB = 0;
         gotF = 0;
+        for (char c : boosters) {
+            if (c == 'B') B++;
+            if (c == 'F') F++;
+            if (c == 'L') L++;
+            if (c == 'R') R++;
+            if (c == 'C') C++;
+        }
         
         map = std::vector<std::string>(H, std::string(W, '.'));
         painted = std::vector<std::vector<bool>>(H, std::vector<bool>(W, false));
@@ -286,17 +168,10 @@ struct State {
                // cell_scores[i][j] = 1;
             }
         }
-        /*
-        for (int i=0; i<cell_scores.size(); i++) {
-            for (int j=0; j<cell_scores[0].size(); j++) {
-                cerr << cell_scores[i][j];
-            }
-            cerr << endl;
-        }
-        */
     }
 
     double score() const {
+        // Consider cells already painted.
         double score = 0.0;
         for (int i = 0; i < (int)painted.size(); i++) {
             for (int j = 0; j < (int)painted[i].size(); j++) {
@@ -486,9 +361,6 @@ bool operator< (const State& lhs, const State& rhs) {
     return lhs.num_unpainted < rhs.num_unpainted;
 }
 
-bool operator< (const Move& lhs, const Move& rhs) {
-    return lhs.move_type < rhs.move_type;
-}
 
 void printMoves(const vector<Move>& moves) {
     string s;
@@ -504,8 +376,8 @@ int getDistanceToNearestDot(const State& state) {
 }
 
 vector<Move> computeBestMoves(State state) {
-    constexpr int BEAM_WIDTH = 50;
-    constexpr int BEAM_DEPTH = 50;
+    constexpr int BEAM_WIDTH = 10;
+    constexpr int BEAM_DEPTH = 10;
     
     // Beam search
     // Beam width: 10 
@@ -554,25 +426,7 @@ vector<Move> computeBestMoves(State state) {
     }
     if (get<0>(best_states[BEAM_DEPTH][0]) == get<0>(best_states[0][0])) {
         cerr << "WARNING!! No progress. " << get<0>(best_states[BEAM_DEPTH][0]) << endl;
-        // Find shortest path to the nearlest unpainted cell.
-        /*
-        vector<vector<int>> dist(state.map.size(), vector<int>(state.map[0].size(), 1000000));
-        dist[state.cur_y][state.cur_x] = 0;
-        que.push(make_tuple(state));
-        while (!que.empty()) {
-            State cur_state = que.pop();
-            for (int i = 0; i < 4; i++) {
-                int next_x = cur_state.cur_x + DX[i];
-                int next_y = cur_state.cur_y + DY[i];
-                if (next_x < 0 || next_x >= cur_state.map[0].size() || 
-                        next_y < 0 || next_y >= cur_state.map.size()) {
-                    
-                }
-            }
-        }
-        */
     }
-
     return get<2>(best_states[BEAM_DEPTH][0]);
 };
 
@@ -607,30 +461,31 @@ string output(const vector<Move> moves) {
 }
 
 int main(int argc, char** argv) {
-  /*
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-  google::InitGoogleLogging(argv[0]);
-  google::InstallFailureSignalHandler();
-  */
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
+    google::InitGoogleLogging(argv[0]);
+    google::InstallFailureSignalHandler();
 
-  std::string input = "";
-  std::getline(std::cin, input);
-  std::vector<std::string> parts = splitAll(input, "#");
+    std::string initial_boosters;
+    if (argc >= 2)
+        initial_boosters = std::string(argv[1]);
 
-  Mine mine;
-  mine.parse(parts[0]);
-  mine.parseObstacles(parts[2]);
-  std::tuple<int, int> initial_pos = parsePoint(parts[1]);
-  mine.setPos(std::get<0>(initial_pos), std::get<1>(initial_pos));
-  mine.boosters = parts[3];
+    std::string input = "";
+    std::getline(std::cin, input);
+    std::vector<std::string> parts = splitAll(input, "#");
 
-  State state(mine);
-  state.print();
-  vector<Move> moves = solve(state);
-  std::string answer = output(moves);
-  std::cout << answer << std::endl;
-  std::cerr << "T: " << moves.size();
+    Mine mine;
+    mine.parse(parts[0]);
+    mine.parseObstacles(parts[2]);
+    std::tuple<int, int> initial_pos = parsePoint(parts[1]);
+    mine.setPos(std::get<0>(initial_pos), std::get<1>(initial_pos));
+    mine.boosters = parts[3];
 
-  //mine.dfs();
-  return 0;
+    State state(mine, initial_boosters);
+    state.print();
+    vector<Move> moves = solve(state);
+    std::string answer = output(moves);
+    std::cout << answer << std::endl;
+    std::cerr << "T: " << moves.size();
+
+    return 0;
 }
