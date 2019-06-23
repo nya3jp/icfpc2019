@@ -21,9 +21,88 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 // bit 0: Wall
 // bit 1: Painted
 // bit 4-7: Booster
-type Board = Vec<Vec<u16>>;
+type Board = Vec<Vec<Cell>>;
 
-// struct Cell(i16);
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Cell(u16);
+
+impl Cell {
+    fn new(v: u16) -> Cell {
+        Cell(v)
+    }
+
+    fn new_empty() -> Cell {
+        Cell::new(0)
+    }
+
+    fn new_wall() -> Cell {
+        Cell::new(1)
+    }
+
+    fn item(&self) -> Option<usize> {
+        let t = (self.0 >> 4) as usize & 0xf;
+        if t == 0 {
+            None
+        } else {
+            Some(t)
+        }
+    }
+
+    fn set_item(&mut self, item: Option<usize>) {
+        let c = item.unwrap_or(0) as u16;
+        self.0 = (self.0 & !(0xf << 4)) | (c << 4);
+    }
+
+    fn is_wall(&self) -> bool {
+        self.0 & 1 != 0
+    }
+
+    fn is_painted(&self) -> bool {
+        self.0 & 2 != 0
+    }
+
+    fn set_painted(&mut self) {
+        self.0 |= 2;
+    }
+
+    fn prio(&self) -> Option<usize> {
+        let t = self.0 as usize >> 8;
+        if t == 0 {
+            None
+        } else {
+            Some(t - 1)
+        }
+    }
+
+    fn set_prio(&mut self, prio: Option<usize>) {
+        let c = prio.map_or(0, |v| v + 1) as u16;
+        self.0 = (self.0 & !(0xff << 8)) | (c << 8);
+    }
+
+    fn to_char(&self) -> char {
+        if (self.0 >> 4) & 0xf == 1 {
+            'B'
+        } else if (self.0 >> 4) & 0xf == 2 {
+            'F'
+        } else if (self.0 >> 4) & 0xf == 3 {
+            'L'
+        } else if (self.0 >> 4) & 0xf == 4 {
+            'X'
+        } else if (self.0 >> 4) & 0xf == 5 {
+            'R'
+        } else if (self.0 >> 4) & 0xf == 6 {
+            'C'
+        } else if self.0 >> 8 != 0 {
+            (b'0' + (self.0 >> 8) as u8 - 1) as char
+        } else if self.0 & 2 != 0 {
+            '.'
+        } else if self.0 & 1 != 0 {
+            '#'
+        } else {
+            ' '
+        }
+    }
+}
 
 #[derive(Debug, StructOpt)]
 enum Opt {
@@ -198,28 +277,7 @@ fn normalize(input: &mut Input) -> (i64, i64) {
 fn print_bd(bd: &Board) {
     for y in (0..bd.len()).rev() {
         for x in 0..bd[y].len() {
-            let c = if (bd[y][x] >> 4) & 0xf == 1 {
-                'B'
-            } else if (bd[y][x] >> 4) & 0xf == 2 {
-                'F'
-            } else if (bd[y][x] >> 4) & 0xf == 3 {
-                'L'
-            } else if (bd[y][x] >> 4) & 0xf == 4 {
-                'X'
-            } else if (bd[y][x] >> 4) & 0xf == 5 {
-                'R'
-            } else if (bd[y][x] >> 4) & 0xf == 6 {
-                'C'
-            } else if bd[y][x] >> 8 != 0 {
-                (b'0' + (bd[y][x] >> 8) as u8 - 1) as char
-            } else if bd[y][x] & 2 != 0 {
-                '.'
-            } else if bd[y][x] & 1 != 0 {
-                '#'
-            } else {
-                ' '
-            };
-            eprint!("{}", c);
+            eprint!("{}", bd[y][x].to_char());
         }
         eprintln!();
     }
@@ -260,7 +318,7 @@ fn encode_commands(ans: &Solution) -> String {
 }
 
 fn build_map(input: &Input, w: i64, h: i64) -> Board {
-    let mut bd = vec![vec![1; w as usize]; h as usize];
+    let mut bd = vec![vec![Cell::new_wall(); w as usize]; h as usize];
     for y in 0..h {
         let mut ss = BTreeSet::new();
         for i in 0..input.map.len() {
@@ -285,7 +343,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Board {
 
         for i in 0..ss.len() / 2 {
             for j in ss[i * 2]..ss[i * 2 + 1] {
-                bd[y as usize][j as usize] = 0;
+                bd[y as usize][j as usize] = Cell::new_empty();
             }
         }
     }
@@ -316,19 +374,19 @@ fn build_map(input: &Input, w: i64, h: i64) -> Board {
 
         for i in 0..ss.len() / 2 {
             for j in ss[i * 2]..ss[i * 2 + 1] {
-                bd[y as usize][j as usize] = 1;
+                bd[y as usize][j as usize] = Cell::new_wall();
             }
         }
     }
 
     for (typ, (x, y)) in input.boosters.iter() {
         match typ {
-            Booster::B => bd[*y as usize][*x as usize] |= 1 << 4,
-            Booster::F => bd[*y as usize][*x as usize] |= 2 << 4,
-            Booster::L => bd[*y as usize][*x as usize] |= 3 << 4,
-            Booster::X => bd[*y as usize][*x as usize] |= 4 << 4,
-            Booster::R => bd[*y as usize][*x as usize] |= 5 << 4,
-            Booster::C => bd[*y as usize][*x as usize] |= 6 << 4,
+            Booster::B => bd[*y as usize][*x as usize].set_item(Some(1)),
+            Booster::F => bd[*y as usize][*x as usize].set_item(Some(2)),
+            Booster::L => bd[*y as usize][*x as usize].set_item(Some(3)),
+            Booster::X => bd[*y as usize][*x as usize].set_item(Some(4)),
+            Booster::R => bd[*y as usize][*x as usize].set_item(Some(5)),
+            Booster::C => bd[*y as usize][*x as usize].set_item(Some(6)),
         }
     }
 
@@ -337,7 +395,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Board {
 
 // solution
 
-fn nearest(state: &State, i: usize, f: impl Fn(u16) -> bool + Copy) -> Option<(i64, i64)> {
+fn nearest(state: &State, i: usize, f: impl Fn(Cell) -> bool + Copy) -> Option<(i64, i64)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -417,7 +475,7 @@ fn nearest(state: &State, i: usize, f: impl Fn(u16) -> bool + Copy) -> Option<(i
             continue;
         }
 
-        if state.bd[cy as usize][cx as usize] & 1 != 0 {
+        if state.bd[cy as usize][cx as usize].is_wall() {
             continue;
         }
 
@@ -438,7 +496,7 @@ fn nearest_empty_dist(
     bd: &Board,
     x: i64,
     y: i64,
-    f: impl Fn(u16) -> bool,
+    f: impl Fn(Cell) -> bool,
     vect: &[Pos],
 ) -> Option<usize> {
     let h = bd.len() as i64;
@@ -463,7 +521,7 @@ fn nearest_empty_dist(
                 continue;
             }
 
-            if bd[ny as usize][nx as usize] & 1 != 0 {
+            if bd[ny as usize][nx as usize].is_wall() {
                 continue;
             }
 
@@ -504,7 +562,7 @@ struct State {
 
 #[derive(Default, Clone)]
 struct Diff {
-    bd: Vec<(usize, usize, u16)>,
+    bd: Vec<(usize, usize, Cell)>,
     x: i64,
     y: i64,
     items: Vec<i64>,
@@ -517,7 +575,7 @@ impl State {
         let mut clone_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
-                if (bd[y][x] >> 4) == 6 {
+                if bd[y][x].item() == Some(6) {
                     clone_num += 1;
                 }
             }
@@ -627,7 +685,7 @@ impl State {
 
             let mut ok = true;
             for (px, py) in pass_cells(x, y, tx, ty) {
-                if self.bd[py as usize][px as usize] & 1 != 0 {
+                if self.bd[py as usize][px as usize].is_wall() {
                     ok = false;
                     break;
                 }
@@ -638,16 +696,16 @@ impl State {
 
             let prev = self.bd[ty as usize][tx as usize];
 
-            if self.bd[ty as usize][tx as usize] & 2 == 0 {
+            if !self.bd[ty as usize][tx as usize].is_painted() {
                 self.rest -= 1;
             }
-            self.bd[ty as usize][tx as usize] |= 2;
+            self.bd[ty as usize][tx as usize].set_painted();
 
-            let prio = self.bd[ty as usize][tx as usize] >> 8;
+            let prio = self.bd[ty as usize][tx as usize].prio();
 
-            if prio != 0 {
-                self.bd[ty as usize][tx as usize] &= 0xff;
-                self.robots[prio as usize - 1].prios -= 1;
+            if let Some(prio) = prio {
+                self.bd[ty as usize][tx as usize].set_prio(None);
+                self.robots[prio].prios -= 1;
 
                 // dbg!("*** CLEANUP PRIORITY");
             }
@@ -661,20 +719,22 @@ impl State {
             }
         }
         // アイテム取得処理
-        let item = self.bd[y as usize][x as usize] >> 4;
-        if item != 0 && item != 4 {
-            self.diff
-                .bd
-                .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
-            self.items[(self.bd[y as usize][x as usize] >> 4) as usize] += 1;
-            self.bd[y as usize][x as usize] &= 0xf;
+        let item = self.bd[y as usize][x as usize].item();
+        if let Some(item) = item {
+            if item != 4 {
+                self.diff
+                    .bd
+                    .push((x as usize, y as usize, self.bd[y as usize][x as usize]));
+                self.items[item] += 1;
+                self.bd[y as usize][x as usize].set_item(None);
 
-            if item == 6 {
-                self.clone_num -= 1;
-            }
+                if item == 6 {
+                    self.clone_num -= 1;
+                }
 
-            if item == 1 {
-                // eprintln!("**** GET ARM ****");
+                if item == 1 {
+                    // eprintln!("**** GET ARM ****");
+                }
             }
         }
 
@@ -687,7 +747,7 @@ impl State {
                 if !(mx >= 0 && mx < w && my >= 0 && my < h) {
                     continue;
                 }
-                if self.bd[my as usize][mx as usize] & 4 != 0 {
+                if self.bd[my as usize][mx as usize].prio() != None {
                     continue;
                 }
 
@@ -783,18 +843,18 @@ impl State {
 
         let cell = self.bd[y as usize][x as usize];
 
-        if cell & 1 != 0 {
+        if cell.is_wall() {
             return acc;
         }
 
-        if cell & 2 != 0 {
+        if cell.is_painted() {
             return acc;
         }
 
         if if b {
-            cell >> 8 != 0
+            cell.prio() != None
         } else {
-            cell >> 8 != i as u16 + 1
+            cell.prio() != Some(i)
         } {
             return acc;
         }
@@ -802,10 +862,12 @@ impl State {
         if diff {
             self.diff.bd.push((x as usize, y as usize, cell));
         }
-        self.bd[y as usize][x as usize] ^= (i as u16 + 1) << 8;
+
         if b {
+            self.bd[y as usize][x as usize].set_prio(Some(i));
             self.robots[i].prios += 1;
         } else {
+            self.bd[y as usize][x as usize].set_prio(None);
             self.robots[i].prios -= 1;
         }
 
@@ -829,7 +891,7 @@ impl State {
         self.move_to(self.robots[i].x, self.robots[i].y, i, true);
     }
 
-    fn nearest_empty_dist(&self, i: usize, f: impl Fn(u16) -> bool) -> usize {
+    fn nearest_empty_dist(&self, i: usize, f: impl Fn(Cell) -> bool) -> usize {
         if self.rest == 0 {
             0
         } else {
@@ -950,7 +1012,9 @@ fn solve(
         for i in 0..robot_num {
             if i == 0 {
                 if state.items[6] > 0 {
-                    if state.bd[state.robots[i].y as usize][state.robots[i].x as usize] >> 4 == 4 {
+                    if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+                        == Some(4)
+                    {
                         // eprintln!("*****CLONE*****");
 
                         cmds.push(Command::Clone);
@@ -961,7 +1025,7 @@ fn solve(
                         //     state.dump();
                         // }
 
-                        let (nx, ny) = nearest(&state, i, |c| (c >> 4) & 0xf == 4).unwrap();
+                        let (nx, ny) = nearest(&state, i, |c| c.item() == Some(4)).unwrap();
                         cmds.push(Command::Move(
                             nx - state.robots[i].x,
                             ny - state.robots[i].y,
@@ -975,7 +1039,7 @@ fn solve(
                     // }
 
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |c| (c >> 4) & 0xf == 6).unwrap();
+                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
                     cmds.push(Command::Move(
                         nx - state.robots[i].x,
                         ny - state.robots[i].y,
@@ -994,9 +1058,9 @@ fn solve(
                     if !(cx >= 0 && cx < w && cy >= 0 && cy < h) {
                         continue;
                     }
-                    let item = state.bd[cy as usize][cx as usize] >> 4;
+                    let item = state.bd[cy as usize][cx as usize].item();
                     // 使える奴だけ
-                    if item == 1 {
+                    if item == Some(1) {
                         // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
                         // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
                         state.move_to(cx, cy, i, true);
@@ -1014,9 +1078,9 @@ fn solve(
             }
 
             let n = nearest(&state, i, |c| {
-                c & 2 == 0
+                !c.is_painted()
                     && if state.robots[i].prios > 0 {
-                        c >> 8 == i as u16 + 1
+                        c.prio() == Some(i)
                     } else {
                         true
                     }
