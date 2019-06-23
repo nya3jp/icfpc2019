@@ -54,6 +54,10 @@ struct SolverOption {
     /// モップを向ける
     #[structopt(long = "mop-direction")]
     mop_direction: bool,
+
+    /// 0 以外の bot が C を回収する
+    #[structopt(long = "aggressive-c-collect")]
+    aggressive_c_collect: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -562,7 +566,7 @@ fn nearest(
     state: &State,
     i: usize,
     f: impl Fn(i64, i64, Cell) -> bool + Copy,
-) -> Option<((i64, i64), usize)> {
+) -> Option<(Pos, usize, Pos)> {
     let h = state.bd.len() as i64;
     let w = state.bd[0].len() as i64;
 
@@ -571,7 +575,7 @@ fn nearest(
     let bd = &state.bd;
 
     if f(orig_x, orig_y, bd[orig_y as usize][orig_x as usize]) {
-        return Some(((orig_x, orig_y), 0));
+        return Some(((orig_x, orig_y), 0, (orig_x, orig_y)));
     }
 
     let mut q = VecDeque::new();
@@ -646,13 +650,14 @@ fn nearest(
         return None;
     }
 
+    let (gx, gy) = found.unwrap();
     let (mut cx, mut cy) = found.unwrap();
     let mut dist = 1;
     loop {
         match backtrack.get(&(cx, cy)) {
             Some(&(nx, ny)) => {
                 if nx == orig_x && ny == orig_y {
-                    return Some(((cx, cy), dist));
+                    return Some(((cx, cy), dist, (gx, gy)));
                 }
                 cx = nx;
                 cy = ny;
@@ -722,6 +727,7 @@ struct RobotState {
     queue: Vec<Command>,
     vect: Vec<Pos>,
     fast_count: usize,
+    target: Option<Pos>,
 }
 
 struct State {
@@ -730,6 +736,7 @@ struct State {
     items: Vec<usize>,
     rest: usize,
     clone_num: usize,
+    pending_clone: HashSet<Pos>,
     portal_num: usize,
     portals: Vec<Pos>,
 
@@ -764,12 +771,14 @@ impl State {
         for c in bought_boosters.chars() {
             items[booster2u16(char2booster(c)) as usize] += 1;
         }
+        let mut pending_clone = HashSet::new();
         let mut clone_num = 0;
         let mut portal_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
                 if bd[y][x].item() == Some(6) {
                     clone_num += 1;
+                    pending_clone.insert((x as i64, y as i64));
                 }
                 if bd[y][x].item() == Some(5) {
                     portal_num += 1;
@@ -788,6 +797,7 @@ impl State {
         if !has_mystery {
             clone_num = 0;
             items[6] = 0;
+            pending_clone.clear();
         }
 
         let mut ret = State {
@@ -796,6 +806,7 @@ impl State {
             items: items,
             rest: 0,
             clone_num,
+            pending_clone,
             portal_num,
             portals: vec![],
             spawn_bot: None,
@@ -825,6 +836,7 @@ impl State {
             queue: vec![],
             vect,
             fast_count: 0,
+            target: None,
         });
     }
 
@@ -1369,6 +1381,10 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 state.robots[i].fast_count -= 1;
             }
 
+            if state.robots[i].target == Some((state.robots[i].x, state.robots[i].y)) {
+                state.robots[i].target = None;
+            }
+
             // キューに命令が詰まっていたらとりあえずそれをこなす
             if let Some(cmd) = state.robots[i].queue.pop() {
                 // FIXME: 他のコマンド使う場合は実装が必要
@@ -1407,6 +1423,11 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
             }
 
             if Some(i) == state.spawn_bot {
+                // TODO: fix ad-hoc ness.
+                if let Some((x, y)) = state.robots[i].target {
+                    state.pending_clone.insert((x, y));
+                    state.robots[i].target = None;
+                }
                 if state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
                     == Some(4)
                 {
@@ -1460,7 +1481,42 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
+            if !state.pending_clone.is_empty() && state.robots[i].target.is_none() && (opt.aggressive_c_collect || i == 0) {
+                let (tx, ty) = nearest(&state, i, |x, y, _| state.pending_clone.contains(&(x, y))).unwrap().2;
+                state.robots[i].target = Some((tx, ty));
+                state.pending_clone.remove(&(tx, ty));
+            }
+
+            if !state.robots[i].target.is_none() {
+                let (tx, ty) = state.robots[i].target.unwrap();
+                let (nx, ny) = nearest(&state, i, |x, y, _| (tx == x && ty == y)).unwrap().0;
+                let dx = nx - state.robots[i].x;
+                let dy = ny - state.robots[i].y;
+                if dx.abs() + dy.abs() == 1 {
+                    cmds.push(Command::Move(dx, dy));
+                    state.move_to(nx, ny, i, false);
+                    if state.robots[i].fast_count > 0 {
+                        collect_item(&mut state, i);
+                        let nnx = nx + dx;
+                        let nny = ny + dy;
+                        if 0 <= nnx
+                            && nnx < w
+                            && 0 <= nny
+                            && nny < h
+                            && !state.bd[nny as usize][nnx as usize].is_wall()
+                        {
+                            state.move_to(nnx, nny, i, false);
+                        }
+                    }
+                } else {
+                    cmds.push(Command::Teleport(nx, ny));
+                    state.move_to(nx, ny, i, false);
+                }
+                continue;
+            }
+
             if i == 0 {
+                /*
                 if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
@@ -1488,6 +1544,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     }
                     continue;
                 }
+*/
                 if opt.aggressive_teleport
                     && state.portal_num > 0
                     && state.robots[i].num_collected_portal == 0
@@ -1653,7 +1710,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            let ((nx, ny), dist) = n.unwrap();
+            let ((nx, ny), dist, _) = n.unwrap();
 
             if opt.use_drill && dist >= 60 /* TODO: parameterise */ && state.items[3] > 0 {
                 let mut found = None;
