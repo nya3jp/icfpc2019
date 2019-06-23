@@ -12,13 +12,15 @@ import (
 )
 
 type args struct {
-	port int
+	port    int
+	execKey string
 }
 
 func parseArgs() (*args, error) {
 	var args args
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.IntVar(&args.port, "port", 8080, "port to listen")
+	fs.StringVar(&args.execKey, "execkey", "", "execkey")
 	return &args, fs.Parse(os.Args[1:])
 }
 
@@ -40,7 +42,7 @@ func main() {
 		}
 
 		fmt.Fprintln(os.Stderr, "Ready")
-		return http.Serve(lis, newHandler(cl))
+		return http.Serve(lis, newHandler(cl, args.execKey))
 	}(); err != nil {
 		panic(fmt.Sprint("ERROR: ", err))
 	}
