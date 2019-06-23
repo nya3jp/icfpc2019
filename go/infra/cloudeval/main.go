@@ -139,6 +139,8 @@ func evaluate(ctx context.Context, sc *storage.Client, tc *tasklet.Client, probl
 		}
 	}()
 
+	start := time.Now()
+
 	task := &tasklet.Task{
 		Cmd: fmt.Sprintf(`set -ex
 cp problems/%s.desc task.desc
@@ -157,6 +159,8 @@ if grep -q ERROR $OUT_DIR/validation.txt; then exit 111; fi
 		return err
 	}
 
+	runtime := time.Since(start)
+
 	obj := sc.Bucket("sound-type-system").Object(fmt.Sprintf("evals/%s/%s/validation.txt", solver, problemPlus))
 	r, err := obj.NewReader(ctx)
 	if err != nil {
@@ -169,7 +173,7 @@ if grep -q ERROR $OUT_DIR/validation.txt; then exit 111; fi
 		return err
 	}
 
-	logf("PASS: %s: %s", problem, strings.TrimSpace(string(b)))
+	logf("PASS: %s (%v): %s", problem, runtime.Round(time.Second), strings.TrimSpace(string(b)))
 	return nil
 }
 
