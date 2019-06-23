@@ -1382,7 +1382,12 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                             collect_item(&mut state, i);
                             let nnx = nx + dx;
                             let nny = ny + dy;
-                            if !state.bd[nny as usize][nnx as usize].is_wall() {
+                            if nnx >= 0
+                                && nnx < w
+                                && nny >= 0
+                                && nny < h
+                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                            {
                                 state.move_to(nnx, nny, i, true);
                             }
                         }
