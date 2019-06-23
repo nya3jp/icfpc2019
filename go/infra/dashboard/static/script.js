@@ -76,6 +76,7 @@ function drawRanking(raw_data) {
    data.addRows(rows);
 
    var options = {
+     explorer: {},
      hAxis: {
        title: 'Round'
      },
