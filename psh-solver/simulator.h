@@ -114,6 +114,9 @@ class Wrapper {
   void AddManipulator(const Point& p) {
     manipulators_.push_back(p);
   }
+  void RemoveManipulator() {
+    manipulators_.pop_back();
+  }
 
   void RotateClockwise() {
     for (auto& manip : manipulators_) {
@@ -191,6 +194,10 @@ class BacklogEntry {
   Booster second_booster() const { return second_booster_; }
   void set_second_booster(Booster b) { second_booster_ = b; }
 
+  // For T.
+  const Point& orig_pos() const { return orig_pos_; }
+  void set_orig_pos(const Point& p) { orig_pos_ = p; }
+
  private:
   // TODO using shorter bitwidth ints.
   int wrapper_index_;
@@ -201,6 +208,7 @@ class BacklogEntry {
   Booster first_booster_ = Booster::X;
   Booster second_booster_ = Booster::X;
 
+  Point orig_pos_;
   std::vector<std::pair<Point, Cell>> updated_cells_;
 };
 
@@ -244,6 +252,7 @@ class Map {
   bool MoveInternal(Wrapper* wrapper, const Point& direction,
                     BacklogEntry* log_entry, bool is_first);
   void Fill(const Wrapper& wrapper, BacklogEntry* entry);
+  void Unfill(const std::vector<std::pair<Point, Cell>>& cells);
 
   std::size_t width_;
   std::size_t height_;

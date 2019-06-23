@@ -68,8 +68,9 @@ func main() {
 			l:    newLogger(args.slackWebhookURL),
 			cl:   cl,
 		}
+		defer m.l.Close()
 		if err := m.Run(ctx); err != nil {
-			m.l.Logf("ERROR: %v", err)
+			m.l.Logf("@everyone ERROR: %v", err)
 			return err
 		}
 		m.l.Log("Success!")
@@ -252,7 +253,7 @@ loop:
 			if r.err != nil {
 				m.l.Logf("Warning: Failed to run the task solver %s: %v", r.name, r.err)
 			} else {
-				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/puzzle/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
+				m.l.Logf("Task solver %s passed with score %d: https://storage.googleapis.com/%s/results/%d/solvers/task/%s/out.txt", r.name, r.score, bucket, m.args.block, r.name)
 				if best == nil || r.score < best.score {
 					best = r
 				}
@@ -384,13 +385,15 @@ type pkg struct {
 }
 
 type logger struct {
-	ch              chan string
+	msgs            chan string
+	done            chan struct{}
 	slackWebhookURL string
 }
 
 func newLogger(slackWebhookURL string) *logger {
 	l := &logger{
-		ch:              make(chan string, 1000),
+		msgs:            make(chan string, 1000),
+		done:            make(chan struct{}),
 		slackWebhookURL: slackWebhookURL,
 	}
 	go l.run()
@@ -398,21 +401,23 @@ func newLogger(slackWebhookURL string) *logger {
 }
 
 func (l *logger) Close() {
-	close(l.ch)
+	close(l.msgs)
+	<-l.done
 }
 
 func (l *logger) Log(args ...interface{}) {
 	msg := fmt.Sprint(args...)
-	l.ch <- msg
+	l.msgs <- msg
 }
 
 func (l *logger) Logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	l.ch <- msg
+	l.msgs <- msg
 }
 
 func (l *logger) run() {
-	for msg := range l.ch {
+	defer close(l.done)
+	for msg := range l.msgs {
 		l.emit(msg)
 	}
 }

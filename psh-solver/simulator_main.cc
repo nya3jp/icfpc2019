@@ -36,7 +36,13 @@ int main(int argc, char* argv[]) {
   auto map = icfpc2019::Map(desc);
 
   LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
+  map.Run(0, icfpc2019::Instruction{icfpc2019::Instruction::Type::W});
+  LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
   map.Run(0, icfpc2019::Instruction{icfpc2019::Instruction::Type::D});
+  LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
+  map.Undo();
+  LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
+  map.Undo();
   LOG(INFO) << "remaining: " << map.remaining() << "\n" << map.ToString();
   return 0;
 }
