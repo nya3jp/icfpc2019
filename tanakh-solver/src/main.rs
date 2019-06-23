@@ -48,8 +48,8 @@ impl Cell {
         }
     }
 
-    fn set_item(&mut self, item: Option<usize>) {
-        let c = item.unwrap_or(0) as u16;
+    fn set_item(&mut self, item: Option<Booster>) {
+        let c = item.map_or(0 as u16, booster2u16);
         self.0 = (self.0 & !(0xf << 4)) | (c << 4);
     }
 
@@ -114,6 +114,9 @@ enum Opt {
         #[structopt(long = "increase-mop")]
         increase_mop: bool,
 
+        #[structopt(short = "b")]
+        bought_boosters: Option<String>,
+
         input: Option<PathBuf>,
     },
 
@@ -168,7 +171,7 @@ const VECTS: &[&[Pos]] = &[
 ];
 // const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Booster {
     B,
     F,
@@ -225,19 +228,25 @@ fn parse_pos_list_list(s: &str) -> Result<Vec<Vec<Pos>>> {
         .collect()
 }
 
+fn char2booster(c: char) -> Booster {
+    match c {
+        'B' => Booster::B,
+        'F' => Booster::F,
+        'L' => Booster::L,
+        'X' => Booster::X,
+        'R' => Booster::R,
+        'C' => Booster::C,
+        _ => unreachable!()
+    }
+}
+
+fn booster2u16(typ: Booster) -> u16 {
+    (typ as u16) + 1
+}
+
 fn parse_booster(s: &str) -> Result<(Booster, Pos)> {
-    let ty = match &s[0..1] {
-        "B" => Booster::B,
-        "F" => Booster::F,
-        "L" => Booster::L,
-        "X" => Booster::X,
-        "R" => Booster::R,
-        "C" => Booster::C,
-        _ => unreachable!(),
-    };
-
+    let ty = char2booster(s.chars().next().unwrap());
     let pos = parse_pos(&s[1..])?;
-
     Ok((ty, pos))
 }
 
@@ -396,14 +405,7 @@ fn build_map(input: &Input, w: i64, h: i64) -> Board {
     }
 
     for (typ, (x, y)) in input.boosters.iter() {
-        match typ {
-            Booster::B => bd[*y as usize][*x as usize].set_item(Some(1)),
-            Booster::F => bd[*y as usize][*x as usize].set_item(Some(2)),
-            Booster::L => bd[*y as usize][*x as usize].set_item(Some(3)),
-            Booster::X => bd[*y as usize][*x as usize].set_item(Some(4)),
-            Booster::R => bd[*y as usize][*x as usize].set_item(Some(5)),
-            Booster::C => bd[*y as usize][*x as usize].set_item(Some(6)),
-        }
+        bd[*y as usize][*x as usize].set_item(Some(*typ));
     }
 
     bd
@@ -587,7 +589,11 @@ struct Diff {
 }
 
 impl State {
-    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64) -> State {
+    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64, bought_boosters: &str) -> State {
+        let mut items = vec![0; 6 + 1];
+        for c in bought_boosters.chars() {
+            items[booster2u16(char2booster(c)) as usize] += 1;
+        }
         let mut clone_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
@@ -595,6 +601,18 @@ impl State {
                     clone_num += 1;
                 }
             }
+        }
+        let mut has_mystery = false;
+        for y in 0..bd.len() {
+            for x in 0..bd[y].len() {
+                if bd[y][x].item() == Some(4) {
+                    has_mystery = true;
+                    break;
+                }
+            }
+        }
+        if !has_mystery {
+            clone_num = 0;
         }
 
         let mut ret = State {
@@ -605,7 +623,7 @@ impl State {
                 manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
                 prios: 0,
             }],
-            items: vec![0; 6 + 1],
+            items: items,
             rest: 0,
             clone_num,
 
@@ -999,11 +1017,12 @@ fn solve(
     island_size_threshold: i64,
     aggressive_item: bool,
     increase_mop: bool,
+    bought_boosters: &str,
 ) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd_org, sx, sy, island_size_threshold);
+    let mut state = State::new(bd_org, sx, sy, island_size_threshold, bought_boosters);
     let mut ret: Solution = vec![];
     state.move_to(sx, sy, 0, false);
 
@@ -1225,6 +1244,7 @@ fn solve_lightning(
     input: &Input,
     increase_mop: bool,
     show_solution: bool,
+    bought_boosters: &str,
 ) -> Result<()> {
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
@@ -1247,6 +1267,7 @@ fn solve_lightning(
                 th,
                 j != 0,
                 increase_mop,
+                bought_boosters,
             );
             eprintln!("{} {}: {}", i, j, cur.len());
             if ans.len() == 0 || ans.len() > cur.len() {
@@ -1362,6 +1383,7 @@ fn main() -> Result<()> {
         Opt::Solve {
             input,
             increase_mop,
+            bought_boosters,
             show_solution,
         } => {
             let (con, file) = read_file(&input)?;
@@ -1371,6 +1393,7 @@ fn main() -> Result<()> {
                 &problem,
                 increase_mop,
                 show_solution,
+                &bought_boosters.unwrap_or_default(),
             )?;
         }
         Opt::Pack => {
