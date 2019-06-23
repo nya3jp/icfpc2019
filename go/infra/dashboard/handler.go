@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -188,15 +189,13 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 
 func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	handle(w, r, func(ctx context.Context) error {
-		const purchase = ""
-
-		ss, err := h.queryBestSolutions(ctx, purchase)
+		ss, err := h.queryOptimalSolutions(ctx)
 		if err != nil {
 			return err
 		}
 
 		type entry struct {
-			problem, solution string
+			problem, purchase, solution string
 		}
 
 		ch := make(chan *entry, len(ss))
@@ -219,6 +218,7 @@ func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter
 				}
 				ch <- &entry{
 					problem:  s.Problem,
+					purchase: s.Purchase,
 					solution: string(b),
 				}
 				return nil
@@ -243,6 +243,13 @@ func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter
 				return err
 			}
 			g.Write([]byte(e.solution))
+			if e.purchase != "" {
+				b, err := z.Create(fmt.Sprintf("%s.buy", e.problem))
+				if err != nil {
+					return err
+				}
+				b.Write([]byte(e.purchase))
+			}
 		}
 		return nil
 	})
@@ -275,6 +282,59 @@ func (h *handler) handleCSV(w http.ResponseWriter, r *http.Request, _ httprouter
 		cw.Flush()
 		return nil
 	})
+}
+
+func (h *handler) queryOptimalSolutions(ctx context.Context) ([]*solution, error) {
+	money := 285346
+
+	bases, err := h.queryBestSolutions(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	baseMap := make(map[string]*solution)
+	for _, s := range bases {
+		baseMap[s.Problem] = s
+	}
+
+	clones, err := h.queryBestSolutions(ctx, "C")
+	if err != nil {
+		return nil, err
+	}
+	cloneMap := make(map[string]*solution)
+	for _, s := range clones {
+		cloneMap[s.Problem] = s
+	}
+
+	sort.Slice(clones, func(i, j int) bool {
+		pi := clones[i].Problem
+		pj := clones[j].Problem
+		ri := float64(cloneMap[pi].BaseScore) / float64(cloneMap[pi].Score)
+		rj := float64(cloneMap[pj].BaseScore) / float64(cloneMap[pj].Score)
+		return ri > rj
+	})
+
+	var optimal []*solution
+	seen := make(map[string]struct{})
+	for _, s := range clones {
+		b := baseMap[s.Problem]
+		if s.Score > b.Score {
+			continue
+		}
+		if money < 2000 {
+			continue
+		}
+		money -= 2000
+		optimal = append(optimal, s)
+		seen[s.Problem] = struct{}{}
+	}
+	for _, s := range bases {
+		if _, ok := seen[s.Problem]; ok {
+			continue
+		}
+		optimal = append(optimal, s)
+		seen[s.Problem] = struct{}{}
+	}
+	return optimal, nil
 }
 
 func (h *handler) queryBestSolutions(ctx context.Context, purchase string) ([]*solution, error) {

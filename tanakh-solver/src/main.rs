@@ -36,6 +36,10 @@ struct SolverOption {
     /// 隣接したアイテムをスルーせずにとる（使えるものだけ）
     #[structopt(long = "aggressive-item")]
     aggressive_item: bool,
+
+    /// ポータルをクローンの次に優先して取りに行く
+    #[structopt(long = "aggressive-teleport")]
+    aggressive_teleport: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -705,6 +709,7 @@ struct State {
     items: Vec<usize>,
     rest: usize,
     clone_num: usize,
+    portal_num: usize,
     portals: Vec<Pos>,
 
     hist: Vec<Diff>,
@@ -737,10 +742,14 @@ impl State {
             items[booster2u16(char2booster(c)) as usize] += 1;
         }
         let mut clone_num = 0;
+        let mut portal_num = 0;
         for y in 0..bd.len() {
             for x in 0..bd[y].len() {
                 if bd[y][x].item() == Some(6) {
                     clone_num += 1;
+                }
+                if bd[y][x].item() == Some(5) {
+                    portal_num += 1;
                 }
             }
         }
@@ -764,6 +773,7 @@ impl State {
             items: items,
             rest: 0,
             clone_num,
+            portal_num,
             portals: vec![],
 
             hist: vec![],
@@ -1250,6 +1260,7 @@ fn solve(
                     }
 
                     if item == 5 {
+                        state.portal_num -= 1;
                         state.robots[i].num_collected_portal += 1;
                     }
                 }
@@ -1310,6 +1321,18 @@ fn solve(
                 } else if state.clone_num > 0 {
                     // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(6)).unwrap();
+                    let dx = nx - state.robots[i].x;
+                    let dy = ny - state.robots[i].y;
+                    if dx.abs() + dy.abs() == 1 {
+                        cmds.push(Command::Move(dx, dy));
+                    } else {
+                        cmds.push(Command::Teleport(nx, ny));
+                    }
+                    state.move_to(nx, ny, i, false);
+                    continue;
+                }
+                if opt.aggressive_teleport && state.portal_num > 0 && state.robots[i].num_collected_portal == 0 {
+                    let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
                     let dy = ny - state.robots[i].y;
                     if dx.abs() + dy.abs() == 1 {
