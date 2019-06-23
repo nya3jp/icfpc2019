@@ -712,6 +712,7 @@ impl State {
         }
         if !has_mystery {
             clone_num = 0;
+            items[6] = 0;
         }
 
         let mut ret = State {
