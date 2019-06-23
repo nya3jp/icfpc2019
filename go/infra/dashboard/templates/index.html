@@ -1,6 +1,13 @@
 {{ define "content" }}
 
-<h1 class="my-4">Best Solutions</h1>
+<h1 class="my-4">
+  Best Solutions
+  {{ if .Purchase }}
+  (purchasing {{ .Purchase }})
+  {{ else }}
+  (no purchase)
+  {{ end }}
+</h1>
 
 <table class="table table-sm">
   <thead>
@@ -15,7 +22,7 @@
   <tbody>
   {{ range .BestSolutions }}
     <tr>
-      <td><a href="/dashboard/problem/{{ .Problem }}">{{ .Problem }}</a></td>
+      <td><a href="/dashboard/problem/{{ .Problem }}{{ if $.Purchase }}?purchase={{ $.Purchase }}{{ end }}">{{ .Problem }}</a></td>
       <td>{{ .Score }}</td>
       <td>{{ .Solver }}</td>
       <td>{{ (localTime .Submitted).Format "2006-01-02 15:04:05" }}</td>

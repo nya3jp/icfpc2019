@@ -85,17 +85,21 @@ type solution struct {
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
 
 type indexValues struct {
+	Purchase      string
 	BestSolutions []*solution
 }
 
 func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	handle(w, r, func(ctx context.Context) error {
-		ss, err := h.queryBestSolutions(ctx)
+		purchase := r.URL.Query().Get("purchase")
+
+		ss, err := h.queryBestSolutions(ctx, purchase)
 		if err != nil {
 			return err
 		}
 
 		v := &indexValues{
+			Purchase:      purchase,
 			BestSolutions: ss,
 		}
 		return indexTmpl.Execute(w, v)
@@ -106,6 +110,7 @@ var problemTmpl = template.Must(parseTemplate("base.html", "problem.html"))
 
 type problemValues struct {
 	Problem      string
+	Purchase     string
 	Solutions    []*solution
 	BestSolution *solution
 }
@@ -114,7 +119,9 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 	problem := ps.ByName("problem")
 
 	handle(w, r, func(ctx context.Context) error {
-		ss, err := h.querySolutionsByProblem(ctx, problem)
+		purchase := r.URL.Query().Get("purchase")
+
+		ss, err := h.querySolutionsByProblem(ctx, problem, purchase)
 		if err != nil {
 			return err
 		}
@@ -125,6 +132,7 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 		}
 		v := &problemValues{
 			Problem:      problem,
+			Purchase:     purchase,
 			Solutions:    ss,
 			BestSolution: bs,
 		}
@@ -134,7 +142,9 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 
 func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	handle(w, r, func(ctx context.Context) error {
-		ss, err := h.queryBestSolutions(ctx)
+		const purchase = ""
+
+		ss, err := h.queryBestSolutions(ctx, purchase)
 		if err != nil {
 			return err
 		}
@@ -192,7 +202,7 @@ func (h *handler) handleZip(w http.ResponseWriter, r *http.Request, _ httprouter
 	})
 }
 
-func (h *handler) queryBestSolutions(ctx context.Context) ([]*solution, error) {
+func (h *handler) queryBestSolutions(ctx context.Context, purchase string) ([]*solution, error) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT
   id,
@@ -211,14 +221,14 @@ INNER JOIN (
       problem,
       MIN(score) AS min_score
     FROM solutions
-    WHERE valid
+    WHERE valid AND purchase = ?
     GROUP BY problem
   ) t1 USING (problem)
   WHERE score = min_score
   GROUP BY problem
 ) t2 USING (id)
 ORDER BY problem ASC
-`)
+`, purchase)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +236,7 @@ ORDER BY problem ASC
 	return scanSolutions(rows)
 }
 
-func (h *handler) querySolutionsByProblem(ctx context.Context, problem string) ([]*solution, error) {
+func (h *handler) querySolutionsByProblem(ctx context.Context, problem, purchase string) ([]*solution, error) {
 	rows, err := h.db.QueryContext(ctx, `
 SELECT
   id,
@@ -238,9 +248,10 @@ SELECT
 FROM solutions
 WHERE
   valid AND
-  problem = ?
+  problem = ? AND
+  purchase = ?
 ORDER BY score ASC, id ASC
-`, problem)
+`, problem, purchase)
 	if err != nil {
 		return nil, err
 	}

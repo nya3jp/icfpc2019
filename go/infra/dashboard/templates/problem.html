@@ -1,6 +1,13 @@
 {{ define "content" }}
 
-<h1 class="my-4">Problem: {{ .Problem }}</h1>
+<h1 class="my-4">
+  Problem: {{ .Problem }}
+  {{ if .Purchase }}
+  (purchasing {{ .Purchase }})
+  {{ else }}
+  (no purchase)
+  {{ end }}
+</h1>
 
 <table id="player">
   <tr>
@@ -49,19 +56,12 @@
 
 
 
-<script src="/static/lambda.201906220737.js"></script>
+<script src="/static/lambda.201906231507.js"></script>
 
 <script>render();</script>
 
 <script>
-    async function setInputFile(id, url) {
-        const res = await fetch(url);
-        if (!res.ok) {
-            throw Error('not found: ' + url);
-        }
-        const blob = await res.blob();
-        const comps = url.split('/');
-        const name = comps[comps.length-1];
+    function setInput(id, blob, name) {
         const file = new File([blob], name);
         const dt = new DataTransfer();
         dt.items.add(file);
@@ -70,22 +70,46 @@
         input.onchange();
     }
 
-    function loadSolution(id) {
-        setInputFile('submit_solution', 'https://storage.googleapis.com/sound-type-system/solutions/' + id + '/solution.txt');
-        const button = document.getElementById('execute_solution');
-        const ticket = setInterval(() => {
-            if (button.disabled) {
-                return
-            }
-            clearInterval(ticket);
-            button.click();
-        }, 100);
+    function setInputText(id, text, name) {
+        const blob = new Blob([text], {type: 'text/plain'});
+        setInput(id, blob, name);
     }
 
-    setInputFile('submit_task', 'https://storage.googleapis.com/sound-type-system/problems/{{ .Problem }}.desc');
-    {{ if .BestSolution }}
-    loadSolution({{ .BestSolution.ID }});
-    {{ end }}
+    async function setInputUrl(id, url) {
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw Error('not found: ' + url);
+        }
+        const blob = await res.blob();
+        const comps = url.split('/');
+        const name = comps[comps.length-1];
+        setInput(id, blob, name);
+    }
+
+    async function waitLoad() {
+        const button = document.getElementById('execute_solution');
+        await new Promise((resolve) => {
+            const ticket = setInterval(() => {
+                if (button.disabled) {
+                    return
+                }
+                clearInterval(ticket);
+                resolve();
+            }, 100);
+        });
+        button.click();
+    }
+
+    async function main() {
+        await setInputUrl('submit_task', 'https://storage.googleapis.com/sound-type-system/problems/{{ .Problem }}.desc');
+        setInputText('submit_boosters', {{ .Purchase }}, {{ .Purchase }});
+        {{ if .BestSolution }}
+        await setInputUrl('submit_solution', 'https://storage.googleapis.com/sound-type-system/solutions/' + {{ .BestSolution.ID }} + '/solution.txt');
+        {{ end }}
+        await waitLoad();
+    }
+
+    main();
 </script>
 
 {{ end }}
