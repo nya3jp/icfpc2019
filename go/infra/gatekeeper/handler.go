@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	apiKey    = "c868a5215b6bfb6161c6a43363e62d45"
-	bucket    = "sound-type-system"
-	testBlock = 4
+	apiKey          = "c868a5215b6bfb6161c6a43363e62d45"
+	bucket          = "sound-type-system"
+	exampleBlockURL = "gs://sound-type-system/blocks/example-v1.tar.gz"
 )
 
 var nameRe = regexp.MustCompile(`^[A_Za-z0-9-]+$`)
@@ -184,7 +184,7 @@ grep -q Success $OUT_DIR/validation.txt
 	t := &task{
 		Cmd: cmd,
 		Pkgs: []*pkg{
-			{URL: fmt.Sprintf("gs://%s/blocks/%d/block.tar.gz", bucket, testBlock)},
+			{URL: exampleBlockURL},
 			{URL: fmt.Sprintf("gs://%s/%s", bucket, path)},
 		},
 		Out: fmt.Sprintf("gs://%s/%s", bucket, outPrefix),
