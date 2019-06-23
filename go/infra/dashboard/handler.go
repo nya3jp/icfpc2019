@@ -94,7 +94,7 @@ func (s *solution) RatioStr() string {
 }
 
 func (s *solution) Weight() int {
-	return int(math.Ceil(1000 * math.Log2(float64(s.Size.Y)*float64(s.Size.Y))))
+	return int(math.Ceil(1000 * math.Log2(float64(s.Size.X)*float64(s.Size.Y))))
 }
 
 var indexTmpl = template.Must(parseTemplate("base.html", "index.html"))
