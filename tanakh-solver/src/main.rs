@@ -1300,7 +1300,6 @@ fn solve(
                     state.move_to(nx, ny, i, false);
                     continue;
                 }
-                eprintln!("portal_num: {}", state.portal_num);
                 if aggressive_teleport && state.portal_num > 0 && state.robots[i].num_collected_portal == 0 {
                     let (nx, ny) = nearest(&state, i, |c| c.item() == Some(5)).unwrap();
                     let dx = nx - state.robots[i].x;
