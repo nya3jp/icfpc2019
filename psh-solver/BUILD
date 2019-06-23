@@ -12,6 +12,19 @@ cc_binary(
 )
 
 cc_binary(
+  name = "idfs_solver",
+  srcs = [
+      "idfs_solver.cc",
+  ],
+  deps = [
+      "@com_github_gflags_gflags//:gflags",
+      "@com_github_google_glog//:glog",
+      "@com_google_absl//absl/types:optional",
+      ":simulator",
+  ],
+)
+
+cc_binary(
   name = "sim",
   srcs = [
       "simulator_main.cc",
