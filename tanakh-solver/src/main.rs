@@ -19,6 +19,51 @@ use puzzle::*;
 
 type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 
+#[derive(Debug, StructOpt)]
+struct SolverOption {
+    /// モップのサイズを増やすかどうか
+    #[structopt(long = "increase-mop")]
+    increase_mop: bool,
+
+    /// 島のサイズの上限
+    #[structopt(long = "island-threshold", default_value = "50")]
+    island_size_threshold: i64,
+
+    /// クローンされたやつがいろんな方向向くやつ
+    #[structopt(long = "change-clone-dir")]
+    change_clone_dir: bool,
+
+    /// 隣接したアイテムをスルーせずにとる（使えるものだけ）
+    #[structopt(long = "aggressive-item")]
+    aggressive_item: bool,
+}
+
+#[derive(Debug, StructOpt)]
+enum Opt {
+    #[structopt(name = "solve")]
+    Solve {
+        #[structopt(short = "s")]
+        show_solution: bool,
+
+        #[structopt(flatten)]
+        solver_option: SolverOption,
+
+        #[structopt(short = "f")]
+        force_save: bool,
+
+        #[structopt(short = "b", default_value = "")]
+        bought_boosters: String,
+
+        input: Option<PathBuf>,
+    },
+
+    #[structopt(name = "pack")]
+    Pack,
+
+    #[structopt(name = "solve-puzzle")]
+    SolvePuzzle { input: Option<PathBuf> },
+}
+
 // Board format
 // bit 0: Wall
 // bit 1: Painted
@@ -114,32 +159,6 @@ impl Cell {
     }
 }
 
-#[derive(Debug, StructOpt)]
-enum Opt {
-    #[structopt(name = "solve")]
-    Solve {
-        #[structopt(short = "s")]
-        show_solution: bool,
-
-        #[structopt(long = "increase-mop")]
-        increase_mop: bool,
-
-        #[structopt(short = "f")]
-        force_save: bool,
-
-        #[structopt(short = "b")]
-        bought_boosters: Option<String>,
-
-        input: Option<PathBuf>,
-    },
-
-    #[structopt(name = "pack")]
-    Pack,
-
-    #[structopt(name = "solve-puzzle")]
-    SolvePuzzle { input: Option<PathBuf> },
-}
-
 type Pos = (i64, i64);
 
 const VECTS1: &[&[Pos]] = &[
@@ -168,26 +187,26 @@ const VECTS2: &[&[Pos]] = &[
     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
 ];
 
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
-    // &[(0, 1), (-1, 0), (0, -1), (1, 0)],
-    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    // &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+// &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+// &[(0, 1), (-1, 0), (0, -1), (1, 0)],
+// &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+// &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+// &[(0, -1), (1, 0), (0, 1), (-1, 0)],
 
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    // &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+// &[(-1, 0), (0, 1), (1, 0), (0, -1)],
 
 // const VECT: &[Pos] = &[(-1, 0), (0, 1), (1, 0), (0, -1)];
 
@@ -297,28 +316,29 @@ fn normalize(input: &mut Input) -> (i64, i64) {
     let max_x = *input.map.iter().map(|(x, y)| x).max().unwrap();
     let min_y = *input.map.iter().map(|(x, y)| y).min().unwrap();
     let max_y = *input.map.iter().map(|(x, y)| y).max().unwrap();
-/*
-    for i in 0..input.map.len() {
-        input.map[i].0 -= min_x;
-        input.map[i].1 -= min_y;
-    }
-
-    input.init_pos.0 -= min_x;
-    input.init_pos.1 -= min_y;
-
-    for i in 0..input.obstacles.len() {
-        for j in 0..input.obstacles[i].len() {
-            input.obstacles[i][j].0 -= min_x;
-            input.obstacles[i][j].1 -= min_y;
+    /*
+        for i in 0..input.map.len() {
+            input.map[i].0 -= min_x;
+            input.map[i].1 -= min_y;
         }
-    }
 
-    for i in 0..input.boosters.len() {
-        input.boosters[i].1 .0 -= min_x;
-        input.boosters[i].1 .1 -= min_y;
-    }
-    (max_x - min_x, max_y - min_y)
-*/
+        input.init_pos.0 -= min_x;
+        input.init_pos.1 -= min_y;
+
+        for i in 0..input.obstacles.len() {
+            for j in 0..input.obstacles[i].len() {
+                input.obstacles[i][j].0 -= min_x;
+                input.obstacles[i][j].1 -= min_y;
+            }
+        }
+
+
+        for i in 0..input.boosters.len() {
+            input.boosters[i].1 .0 -= min_x;
+            input.boosters[i].1 .1 -= min_y;
+        }
+        (max_x - min_x, max_y - min_y)
+    */
 
     (max_x, max_y)
 }
@@ -704,7 +724,14 @@ struct Diff {
 }
 
 impl State {
-    fn new(bd: &Board, x: i64, y: i64, island_size_threshold: i64, bought_boosters: &str, vects: &[&[Pos]]) -> State {
+    fn new(
+        bd: &Board,
+        x: i64,
+        y: i64,
+        island_size_threshold: i64,
+        bought_boosters: &str,
+        vects: &[&[Pos]],
+    ) -> State {
         let mut items = vec![0; 6 + 1];
         for c in bought_boosters.chars() {
             items[booster2u16(char2booster(c)) as usize] += 1;
@@ -1152,16 +1179,20 @@ fn solve(
     bd_org: &Board,
     sx: i64,
     sy: i64,
-    island_size_threshold: i64,
-    aggressive_item: bool,
-    increase_mop: bool,
-    change_clone_dir: bool,
     bought_boosters: &str,
+    opt: &SolverOption,
 ) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
 
-    let mut state = State::new(bd_org, sx, sy, island_size_threshold, bought_boosters, if change_clone_dir {VECTS1} else {VECTS2});
+    let mut state = State::new(
+        bd_org,
+        sx,
+        sy,
+        opt.island_size_threshold,
+        bought_boosters,
+        if opt.change_clone_dir { VECTS1 } else { VECTS2 },
+    );
     let mut ret: Solution = vec![];
     state.move_to(sx, sy, 0, false);
 
@@ -1245,7 +1276,7 @@ fn solve(
                         cmds.push(Command::Clone);
                         state.add_robot(state.robots[i].x, state.robots[i].y);
 
-                        if change_clone_dir {
+                        if opt.change_clone_dir {
                             let new_robot_id = state.robots.len() - 1;
                             match new_robot_id % 4 {
                                 0 => {}
@@ -1291,7 +1322,7 @@ fn solve(
                 }
             }
 
-            if aggressive_item {
+            if opt.aggressive_item {
                 let mut done = false;
                 // 隣にアイテムがあったら拾う
                 for &(dx, dy) in state.robots[i].vect.iter() {
@@ -1347,7 +1378,7 @@ fn solve(
             let (nx, ny) = n.unwrap();
 
             // 手が増やせるならとりあえず縦に増やす
-            if increase_mop {
+            if opt.increase_mop {
                 if state.items[1] > 0 && i == shortest_mop {
                     state.items[1] -= 1;
 
@@ -1411,10 +1442,6 @@ fn solve(
             // eprintln!("{}", &encode_commands(&ret));
         }
 
-        if steps == 3491 || steps == 3492 {
-            eprintln!("Cmds: {}, {:?}", steps, cmds);
-        }
-
         // state.dump();
         ret.push(cmds);
     }
@@ -1469,51 +1496,24 @@ fn solve(
 fn solve_lightning(
     name: &str,
     input: &Input,
-    increase_mop: bool,
     show_solution: bool,
     force_save: bool,
     bought_boosters: &str,
+    solver_option: &SolverOption,
 ) -> Result<()> {
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
 
-    let mut ans = vec![];
-
-    let island_th_params = &[25, 50, 100];
-    // let island_th_params = 9..10;
-
-    for &i in island_th_params.iter() {
-        let aggressive_item_get = 1..=1;
-
-        for j in aggressive_item_get {
-            let change_clone_dir = 0..=1;
-
-            for k in change_clone_dir {
-                let cur = solve(
-                    &mut bd,
-                    input.init_pos.0,
-                    input.init_pos.1,
-                    i,
-                    j != 0,
-                    k != 0,
-                    increase_mop,
-                    bought_boosters,
-                );
-                if ans.len() == 0 || ans.len() > cur.len() {
-                    ans = cur.clone();
-                }
-                eprintln!(
-                    "{}, {}, {}: cur: {}, best: {}",
-                    i,
-                    j,
-                    k,
-                    cur.len(),
-                    ans.len()
-                );
-            }
-        }
-    }
+    let ans = solve(
+        &mut bd,
+        input.init_pos.0,
+        input.init_pos.1,
+        bought_boosters,
+        solver_option,
+    );
+    eprintln!(
+        "Score: {}, (options: {:?})", ans.len(), solver_option);
 
     let score = ans.len() as i64;
     // eprintln!("Score: {}", score);
@@ -1629,20 +1629,20 @@ fn main() -> Result<()> {
     match Opt::from_args() {
         Opt::Solve {
             show_solution,
-            increase_mop,
             force_save,
-            bought_boosters,
             input,
+            bought_boosters,
+            solver_option,
         } => {
             let (con, file) = read_file(&input)?;
             let problem = parse_input(&con)?;
             solve_lightning(
                 &get_problem_name(&file),
                 &problem,
-                increase_mop,
                 show_solution,
                 force_save,
-                &bought_boosters.unwrap_or_default(),
+                &bought_boosters,
+                &solver_option,
             )?;
         }
         Opt::Pack => {
