@@ -131,13 +131,13 @@ class Wrapper {
 
   void RotateClockwise() {
     for (auto& manip : manipulators_) {
-      manip = Point{-manip.y, manip.x};
+      manip = Point{manip.y, -manip.x};
     }
   }
 
   void RotateCounterClockwise() {
     for (auto& manip : manipulators_) {
-      manip = Point{manip.y, -manip.x};
+      manip = Point{-manip.y, manip.x};
     }
   }
 
