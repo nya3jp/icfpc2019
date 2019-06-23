@@ -1,4 +1,17 @@
 cc_binary(
+  name = "verifier",
+  srcs = [
+      "verifier.cc",
+  ],
+  deps = [
+      "@com_github_gflags_gflags//:gflags",
+      "@com_github_google_glog//:glog",
+      "@com_google_absl//absl/types:optional",
+      ":simulator",
+  ],
+)
+
+cc_binary(
   name = "sim",
   srcs = [
       "simulator_main.cc",

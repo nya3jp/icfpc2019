@@ -100,6 +100,11 @@ std::istream& operator>>(std::istream& is, Instruction& inst);
 
 Desc ParseDesc(const std::string& task);
 
+struct Solution {
+  std::vector<std::vector<Instruction>> moves;
+};
+Solution ParseSolution(const std::string& solution);
+
 class Wrapper {
  public:
   explicit Wrapper(const Point& point) : point_(point) {}
@@ -229,12 +234,36 @@ class Map {
   int width() const { return width_; }
   int height() const { return height_; }
 
+  bool InMap(const Point& point) const {
+    return
+        (0 <= point.x && point.x < static_cast<int>(width_)) &&
+        (0 <= point.y && point.y < static_cast<int>(height_));
+  }
+
   int remaining() const { return remaining_; }
   int num_steps() const { return num_steps_; }
 
   const std::vector<Wrapper>& wrappers() const { return wrappers_; }
 
-  void Run(int index, const Instruction& inst);
+  // DryRun tries to run the instruction without side effect.
+  // If it could success, return RunResult::SUCCESS.
+  // Otherwise, corresponding error will be returned.
+  enum class RunResult {
+    SUCCESS,
+    NO_WRAPPER,  // The |index| exceeds the number of wrappers.
+    OUT_OF_MAP,  // The instruction tries to move towards to out of the map.
+    WALL,  // The instruction tries to be embedded into a wall.
+    NO_BOOSTER,  // No booster is available for the instruction.
+    BAD_MANIPULATOR_POSITION, // Manipulator cannot be extended to there.
+    BAD_TELEPORT_POSITION,  // Teleporter cannot be installed to there.
+    UNKNOWN_TELEPORT_POSITION,  // Cannot teleport to there.
+    BAD_CLONE_POSITION,  // Cannot clone at the point.
+    UNKNOWN_INSTRUCTION,  // Geven instruction is unknown.
+  };
+  RunResult DryRun(int index, const Instruction& inst) const;
+
+  RunResult Run(int index, const Instruction& inst);
+  void RunUnsafe(int index, const Instruction& inst);
   void Undo();
 
   std::string ToString() const;
@@ -251,6 +280,8 @@ class Map {
             BacklogEntry::Action a, BacklogEntry::Action aa);
   bool MoveInternal(Wrapper* wrapper, const Point& direction,
                     BacklogEntry* log_entry, bool is_first);
+  RunResult DryMove(const Wrapper& wrapper, const Point& direction) const;
+
   void Fill(const Wrapper& wrapper, BacklogEntry* entry);
   void Unfill(const std::vector<std::pair<Point, Cell>>& cells);
 
@@ -273,6 +304,8 @@ class Map {
   // Maybe deque to limit num backtrackable for performance?
   std::vector<BacklogEntry> backlogs_;
 };
+
+bool Verify(Map* m, const Solution& sol);
 
 } // namespace icpfc2019
 

@@ -123,21 +123,6 @@ struct Mine {
     // }
   }
 
-  void dump() {
-    std::cout << "pos = (" << cur_x
-              << "," << cur_y << ")"
-              << std::endl;
-    std::cout << "Map:" << std::endl;
-    for (size_t i = 0; i < mp.size(); ++i) {
-      for (size_t j = 0; j < mp[i].size(); ++j) {
-        if (mp[max_y - i - 1][j] == 0) std::cout << '.';
-        else if (mp[max_y - i - 1][j] == 1) std::cout << '#';
-        else std::cout << 'o';
-      }
-      std::cout << std::endl;
-    }
-  }
-
   // 0 = empty
   // 1 = obstacle
   // 2 = wrapped
@@ -476,7 +461,7 @@ void printMoves(const vector<Move>& moves) {
     for (auto move : moves) {
         s += move.move_type;
     }
-    cout << "Moves: " << s << endl;
+    cerr << "Moves: " << s << endl;
 }
 
 int getDistanceToNearestDot(const State& state) {
@@ -535,11 +520,11 @@ vector<Move> computeBestMoves(State state) {
         }
     }
     if (best_states[BEAM_DEPTH].empty()) {
-        cout << "ERROR!! best_states[BEAM_DEPTH] is empty." << endl;
+        cerr << "ERROR!! best_states[BEAM_DEPTH] is empty." << endl;
         return vector<Move>();
     }
     if (get<0>(best_states[BEAM_DEPTH][0]) == get<0>(best_states[0][0])) {
-        cout << "WARNING!! No progress. " << get<0>(best_states[BEAM_DEPTH][0]) << endl;
+        cerr << "WARNING!! No progress. " << get<0>(best_states[BEAM_DEPTH][0]) << endl;
         // Find shortest path to the nearlest unpainted cell.
         /*
         vector<vector<int>> dist(state.map.size(), vector<int>(state.map[0].size(), 1000000));
@@ -609,7 +594,6 @@ int main(int argc, char** argv) {
   std::tuple<int, int> initial_pos = parsePoint(parts[1]);
   mine.setPos(std::get<0>(initial_pos), std::get<1>(initial_pos));
   mine.boosters = parts[3];
-  mine.dump();
 
   State state(mine);
   state.dump();
