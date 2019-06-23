@@ -4,12 +4,13 @@ while :; do
     block=$(./lambda-cli.py getblockinfo block)
     blockdir="blocks/$block"
     seenfile="$blockdir/SEEN"
-    if [[ -f "$seenfile" ]]; then
+    if [[ ! -d "$blockdir" ]] || [[ -f "$seenfile" ]]; then
         sleep 3
         continue
     fi
 
     echo "New block $block"
+    sleep 3
 
     (
         cd "$blockdir"
