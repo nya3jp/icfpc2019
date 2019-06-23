@@ -319,6 +319,113 @@ void Map::Undo() {
   const auto& log = backlogs_.back();
   auto& wrapper = wrappers_[log.wrapper_index()];
 
+  switch (log.action()) {
+    case BacklogEntry::Action::WW: {
+      if (log.second_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.second_booster());
+      }
+      const auto p = wrapper.point() - Point{0, 1};
+      wrapper.set_point(p);
+      // fallthrough.
+    }
+    case BacklogEntry::Action::W: {
+      if (log.first_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.first_booster());
+      }
+      const auto p = wrapper.point() - Point{0, 1};
+      wrapper.set_point(p);
+      break;
+    }
+    case BacklogEntry::Action::AA: {
+      if (log.second_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.second_booster());
+      }
+      const auto p = wrapper.point() - Point{-1, 0};
+      wrapper.set_point(p);
+      // fallthrough.
+    }
+    case BacklogEntry::Action::A: {
+      if (log.first_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.first_booster());
+      }
+      const auto p = wrapper.point() - Point{-1, 0};
+      wrapper.set_point(p);
+      break;
+    }
+    case BacklogEntry::Action::SS: {
+      if (log.second_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.second_booster());
+      }
+      const auto p = wrapper.point() - Point{0, -1};
+      wrapper.set_point(p);
+      // fallthrough.
+    }
+    case BacklogEntry::Action::S: {
+      if (log.first_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.first_booster());
+      }
+      const auto p = wrapper.point() - Point{0, -1};
+      wrapper.set_point(p);
+      break;
+    }
+    case BacklogEntry::Action::DD: {
+      if (log.second_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.second_booster());
+      }
+      const auto p = wrapper.point() - Point{0, -1};
+      wrapper.set_point(p);
+      // fallthrough.
+    }
+    case BacklogEntry::Action::D: {
+      if (log.first_booster() != Booster::X) {
+        booster_map_.emplace(wrapper.point(), log.first_booster());
+      }
+      const auto p = wrapper.point() - Point{1, 0};
+      wrapper.set_point(p);
+      break;
+    }
+    case BacklogEntry::Action::Z:
+      break;
+    case BacklogEntry::Action::Q: {
+      wrapper.RotateClockwise();
+      break;
+    }
+    case BacklogEntry::Action::E: {
+      wrapper.RotateCounterClockwise();
+      break;
+    }
+    case BacklogEntry::Action::B: {
+      wrapper.RemoveManipulator();
+      ++collected_b_;
+      break;
+    }
+    case BacklogEntry::Action::F: {
+      // Do nothing. Counter will be reset below.
+      ++collected_f_;
+      break;
+    }
+    case BacklogEntry::Action::L: {
+      // Do nothing. Counter will be reset below.
+      ++collected_l_;
+      break;
+    }
+    case BacklogEntry::Action::R: {
+      resets_.erase(wrapper.point());
+      ++collected_r_;
+      break;
+    }
+    case BacklogEntry::Action::T: {
+      wrapper.set_point(log.orig_pos());
+      break;
+    }
+    case BacklogEntry::Action::C: {
+      wrappers_.pop_back();
+      ++collected_c_;
+      break;
+    }
+  }
+  Unfill(log.updated_cells());
+
   switch (log.pending_booster()) {
     case Booster::B:
       --collected_b_;
@@ -342,6 +449,14 @@ void Map::Undo() {
   wrapper.set_pending_booster(Booster::X);
   --num_steps_;
   backlogs_.pop_back();
+}
+
+void Map::Unfill(const std::vector<std::pair<Point, Cell>>& cells) {
+  for (const auto& item : cells) {
+    GetCell(item.first) = item.second;
+    if (item.second == Cell::EMPTY)
+      ++remaining_;
+  }
 }
 
 void Map::Run(int index, const Instruction& inst) {
@@ -445,6 +560,7 @@ void Map::Run(int index, const Instruction& inst) {
       }
       case Instruction::Type::T: {
         entry.set_action(BacklogEntry::Action::T);
+        entry.set_orig_pos(wrapper.point());
         CHECK(resets_.find(inst.arg) != resets_.end());
         wrapper.set_point(inst.arg);
         Fill(wrapper, &entry);
@@ -474,6 +590,8 @@ void Map::Run(int index, const Instruction& inst) {
       wrapper.set_drill_count(drill_count - 1);
     }
   }
+
+  backlogs_.push_back(std::move(entry));
 }
 
 std::string Map::ToString() const {
@@ -591,7 +709,8 @@ void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
     if (cell == Cell::EMPTY) {
       --remaining_;
     }
-    entry->add_updated_cell(wrapper.point(), cell);
+    if (entry)
+      entry->add_updated_cell(wrapper.point(), cell);
     cell = Cell::FILLED;
   }
   for (const auto& manip : wrapper.manipulators()) {
@@ -601,7 +720,8 @@ void Map::Fill(const Wrapper& wrapper, BacklogEntry* entry) {
     }
     auto& cell = GetCell(p);
     if (cell != Cell::FILLED) {
-      entry->add_updated_cell(p, cell);
+      if (entry)
+        entry->add_updated_cell(p, cell);
       cell = Cell::FILLED;
       --remaining_;
     }
