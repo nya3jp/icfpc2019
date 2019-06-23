@@ -20,6 +20,7 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 // Board format
 // bit 0: Wall
 // bit 1: Painted
+// bit 2: Portal
 // bit 4-7: Booster
 type Board = Vec<Vec<Cell>>;
 
@@ -51,6 +52,13 @@ impl Cell {
     fn set_item(&mut self, item: Option<Booster>) {
         let c = item.map_or(0 as u16, booster2u16);
         self.0 = (self.0 & !(0xf << 4)) | (c << 4);
+    }
+
+    fn set_portal(&mut self) {
+        self.0 = (self.0 | (1 << 2));
+    }
+    fn has_portal(&self) -> bool {
+        self.0 & 4 != 0
     }
 
     fn is_wall(&self) -> bool {
@@ -577,7 +585,7 @@ struct RobotState {
     y: i64,
     manips: Vec<Pos>,
     prios: usize,
-    use_portal: bool,
+    num_collected_portal: usize,
 }
 
 struct State {
@@ -637,7 +645,7 @@ impl State {
                 y,
                 manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
                 prios: 0,
-                use_portal: false,
+                num_collected_portal: 0,
             }],
             items: items,
             rest: 0,
@@ -660,7 +668,7 @@ impl State {
             y,
             manips: vec![(0, 0), (1, 1), (1, 0), (1, -1)],
             prios: 0,
-            use_portal: false,
+            num_collected_portal: 0,
         });
     }
 
@@ -1061,7 +1069,7 @@ fn solve(
                     }
 
                     if item == 5 {
-                        state.robots[i].use_portal = true;
+                        state.robots[i].num_collected_portal += 1;
                     }
                 }
             }
@@ -1138,9 +1146,13 @@ fn solve(
                 }
             }
 
-            if state.robots[i].use_portal && state.items[5] > 0 {
-                state.robots[i].use_portal = false;
+            if state.robots[i].num_collected_portal > 0 &&
+                state.items[5] > 0 &&
+                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item() != Some(4) &&
+                !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal() {
+                state.robots[i].num_collected_portal -= 1;
                 state.portals.push((state.robots[i].x, state.robots[i].y));
+                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_portal();
                 cmds.push(Command::SetPortal);
                 continue;
             }
