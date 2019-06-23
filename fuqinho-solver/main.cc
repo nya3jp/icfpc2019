@@ -4,6 +4,23 @@
 #include <vector>
 #include <algorithm>
 #include <queue>
+#include <iostream>
+#include <sstream>
+#include <vector>
+#include <queue>
+#include <stack>
+#include <set>
+#include <map>
+#include <bitset>
+#include <algorithm>
+#include <numeric>
+#include <functional>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <ctime>
+#include <cassert>
+#include <random>
 
 #include "gflags/gflags.h"
 #include "glog/logging.h"
@@ -11,9 +28,27 @@
 #include "fuqinho-solver/geometry.h"
 #include "fuqinho-solver/intersection.h"
 
-#define USE_VERBOSE 1;
+using namespace std;
+
+#define REP(i,n) for(int i=0; i<(int)(n); i++)
+#define FOR(i,b,e) for(int i=(b); i<(int)(e); i++)
+#define EACH(i,c) for(__typeof((c).begin()) i=(c).begin(); i!=(c).end(); i++)
+#define ALL(c) (c).begin(), (c).end()
+#define mp make_pair
+#define dump(x) cerr << #x << " = " << (x) << endl;
+typedef long long ll;
+template<class T1,class T2> ostream& operator<<(ostream& o,const pair<T1,T2>& p){return o<<"("<<p.first<<","<<p.second<<")";}
+template<class T> ostream& operator<<(ostream& o,const vector<T>& v){o<<"[";for(typename vector<T>::const_iterator i=v.begin();i!=v.end();++i){if (i != v.begin()) o << ", ";o<<(*i);}o<<"]";return o;}
+template<class T> ostream& operator<<(ostream& o,const set<T>& s){o<<"{";for(typename set<T>::const_iterator i=s.begin();i!=s.end();++i){if(i!=s.begin())o<<", ";o<<(*i);}o<<"}";return o;}
+template<class K,class V> ostream& operator<<(ostream& o,const map<K,V>& m){o<<"{";for(typename map<K,V>::const_iterator i=m.begin();i!=m.end();++i){if(i!=m.begin())o<<", ";o<<i->first<<":"<<i->second;}o<<"}";return o;}
+template<class T> ostream& operator<<(ostream& o,const vector<vector<T> >& m){o<<"[\n";for(typename vector<vector<T> >::const_iterator i=m.begin();i!=m.end();++i){o<<"  "<<(*i);o<<(i+1!=m.end()?",\n":"\n");}o<<"]\n";return o;}
+string bitstr(int n,int d=0){string r;for(int i=0;i<d||n>0;++i,n>>=1){r+=(n&1)?"1":"0";}reverse(r.begin(),r.end());return r;}
 
 constexpr int INF = 1e9;
+
+
+#define USE_VERBOSE 1;
+
 
 std::vector<std::string> splitAll(std::string s, std::string t){
   std::vector<std::string> v;
@@ -210,7 +245,6 @@ struct State {
             ss >> type >> x >> y;
             map[y][x] = type;
         }
-        dump();
     }
 
     void paint() {
@@ -425,7 +459,7 @@ struct State {
         return num_unpainted == 0;
     }
 
-    void dump() {
+    void print() {
         cerr << "===============================" << endl;
         cerr << "B:" << B << " F:" << F << endl;
         cerr << "tB:" << tB << " tF:" << tF << endl;
@@ -500,17 +534,12 @@ vector<Move> computeBestMoves(State state) {
                 best_states[k+1].push_back(
                         make_tuple(next_score, next_state, next_moves));
             }
-            std::sort(best_states[k+1].rbegin(), best_states[k+1].rend());
-            
-
-            /*
-            cout << "---------- Candidates: ---------------" << endl;
-            for (int j = 0; j < best_states[k+1].size(); j++) {
-                cout << "Score: " << get<0>(best_states[k+1][j]) << endl;
-                get<1>(best_states[k+1][j]).dump();
-            }
+            /* 
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(best_states[k+1].begin(), best_states[k+1].end(), g);
             */
-
+            std::sort(best_states[k+1].rbegin(), best_states[k+1].rend());
             if (best_states[k+1].size() > BEAM_WIDTH) {
                 best_states[k+1].erase(best_states[k+1].begin() + BEAM_WIDTH, best_states[k+1].end());
             }
@@ -559,7 +588,7 @@ vector<Move> solve(const State& initial_state) {
             state = state.move(move.move_type).second;
         }
         moves.insert(moves.end(), best_moves.begin(), best_moves.end());
-        state.dump();
+        state.print();
     }
     return moves;
 }
@@ -596,7 +625,7 @@ int main(int argc, char** argv) {
   mine.boosters = parts[3];
 
   State state(mine);
-  state.dump();
+  state.print();
   vector<Move> moves = solve(state);
   std::string answer = output(moves);
   std::cout << answer << std::endl;
