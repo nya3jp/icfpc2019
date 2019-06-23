@@ -266,11 +266,11 @@ INNER JOIN (
     WHERE valid AND purchase = ?
     GROUP BY problem
   ) t1 USING (problem)
-  WHERE score = min_score
+  WHERE valid AND purchase = ? AND score = min_score
   GROUP BY problem
 ) t2 USING (id)
 ORDER BY problem ASC
-`, purchase)
+`, purchase, purchase)
 	if err != nil {
 		return nil, err
 	}
