@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 use std::str::FromStr;
 use structopt::StructOpt;
-// const ISLAND_SIZE_THRESHOLD: usize = 50;
 
 mod puzzle;
 use puzzle::*;
@@ -23,6 +22,8 @@ type Result<T> = std::result::Result<T, Box<std::error::Error>>;
 // bit 1: Painted
 // bit 4-7: Booster
 type Board = Vec<Vec<u16>>;
+
+// struct Cell(i16);
 
 #[derive(Debug, StructOpt)]
 enum Opt {
@@ -611,7 +612,7 @@ impl State {
         unimplemented!()
     }
 
-    fn move_to(&mut self, x: i64, y: i64, i: usize) {
+    fn move_to(&mut self, x: i64, y: i64, i: usize, detect_island: bool) {
         let h = self.bd.len() as i64;
         let w = self.bd[0].len() as i64;
 
@@ -681,42 +682,44 @@ impl State {
         self.robots[i].y = y;
 
         // mark islands
-        for (mx, my) in mark_around {
-            if !(mx >= 0 && mx < w && my >= 0 && my < h) {
-                continue;
-            }
-            if self.bd[my as usize][mx as usize] & 4 != 0 {
-                continue;
-            }
+        if detect_island {
+            for (mx, my) in mark_around {
+                if !(mx >= 0 && mx < w && my >= 0 && my < h) {
+                    continue;
+                }
+                if self.bd[my as usize][mx as usize] & 4 != 0 {
+                    continue;
+                }
 
-            let island_size = self.paint(
-                mx,
-                my,
-                i,
-                true,
-                false,
-                0,
-                self.island_size_threshold as usize,
-            );
-            self.paint(
-                mx,
-                my,
-                i,
-                false,
-                false,
-                0,
-                self.island_size_threshold as usize,
-            );
-            if island_size < self.island_size_threshold as usize {
-                self.paint(
+                let island_size = self.paint(
                     mx,
                     my,
                     i,
                     true,
-                    true,
+                    false,
                     0,
                     self.island_size_threshold as usize,
                 );
+                self.paint(
+                    mx,
+                    my,
+                    i,
+                    false,
+                    false,
+                    0,
+                    self.island_size_threshold as usize,
+                );
+                if island_size < self.island_size_threshold as usize {
+                    self.paint(
+                        mx,
+                        my,
+                        i,
+                        true,
+                        true,
+                        0,
+                        self.island_size_threshold as usize,
+                    );
+                }
             }
         }
     }
@@ -823,7 +826,7 @@ impl State {
                 r.0 *= -1;
             }
         }
-        self.move_to(self.robots[i].x, self.robots[i].y, i);
+        self.move_to(self.robots[i].x, self.robots[i].y, i, true);
     }
 
     fn nearest_empty_dist(&self, i: usize, f: impl Fn(u16) -> bool) -> usize {
@@ -917,7 +920,7 @@ fn solve(
 
     let mut state = State::new(bd_org, sx, sy, island_size_threshold);
     let mut ret: Solution = vec![];
-    state.move_to(sx, sy, 0);
+    state.move_to(sx, sy, 0, false);
 
     // state.dump();
 
@@ -963,7 +966,7 @@ fn solve(
                             nx - state.robots[i].x,
                             ny - state.robots[i].y,
                         ));
-                        state.move_to(nx, ny, i);
+                        state.move_to(nx, ny, i, false);
                     }
                     continue;
                 } else if state.clone_num > 0 {
@@ -977,7 +980,7 @@ fn solve(
                         nx - state.robots[i].x,
                         ny - state.robots[i].y,
                     ));
-                    state.move_to(nx, ny, i);
+                    state.move_to(nx, ny, i, false);
                     continue;
                 }
             }
@@ -996,7 +999,7 @@ fn solve(
                     if item == 1 {
                         // eprintln!("{} {} -> {} {}", state.x, state.y, cx, cy);
                         // eprintln!("{}, item: {}", state.bd[cy as usize][cx as usize], item);
-                        state.move_to(cx, cy, i);
+                        state.move_to(cx, cy, i, true);
                         cmds.push(Command::Move(dx, dy));
                         // eprintln!("{}", state.bd[cy as usize][cx as usize]);
                         done = true;
@@ -1074,7 +1077,7 @@ fn solve(
 
             // 移動
             cmds.push(Command::Move(dx, dy));
-            state.move_to(nx, ny, i);
+            state.move_to(nx, ny, i, true);
 
             // eprintln!("{}", &encode_commands(&ret));
         }
