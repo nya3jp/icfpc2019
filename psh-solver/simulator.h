@@ -131,13 +131,13 @@ class Wrapper {
 
   void RotateClockwise() {
     for (auto& manip : manipulators_) {
-      manip = Point{-manip.y, manip.x};
+      manip = Point{manip.y, -manip.x};
     }
   }
 
   void RotateCounterClockwise() {
     for (auto& manip : manipulators_) {
-      manip = Point{manip.y, -manip.x};
+      manip = Point{-manip.y, manip.x};
     }
   }
 
@@ -271,6 +271,8 @@ class Map {
   RunResult Run(int index, const Instruction& inst);
   void RunUnsafe(int index, const Instruction& inst);
   void Undo();
+
+  bool IsVisible(const Point& origin, const Point& target) const;
 
   std::string ToString() const;
 

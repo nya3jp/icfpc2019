@@ -79,6 +79,23 @@ def _create_polygon(grid, tSize):
             return
 
 
+def handle_diagonal(grid, pos0):
+    x, y = pos0
+    diagonals = [(dx, dy) for dx in [-1, 1] for dy in [-1, 1]
+                 if grid[x + dx, y + dy] == '#']
+    assert len(diagonals) <= 1
+    if diagonals == []:
+        return None
+    dx, dy = diagonals[0]
+    for ex, ey in [(dx, 0), (0, dy)]:
+        nx, ny = x + ex, y + ey
+        if (grid[nx, ny] != '.' and
+            grid[nx + ex, ny + ey] != '#' and
+            grid[nx + ex + ex - dx, ny + ey + ey - dy] != '#'):
+            return [(pos0, (ex, ey)), ((nx, ny), None)]
+    assert False
+
+
 def find_goal(grid, pos0):
     previous = {pos0: None}
     todo = deque()
@@ -86,9 +103,10 @@ def find_goal(grid, pos0):
     if (grid[pos0] == '#' or
         any(grid[pos0[0] + dx, pos0[1] + dy] == '#' for dx, dy in _DIRS)):
         return [(pos0, None)]
-    
-    assert(all(grid[pos0[0] + dx, pos0[1] + dy] != '#'
-               for dx in [-1, 1] for dy in [-1, 1]))
+
+    diag = handle_diagonal(grid, pos0)
+    if diag:
+        return diag
     
     todo.append(pos0)
     goal = None
