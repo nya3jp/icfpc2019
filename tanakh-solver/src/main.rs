@@ -84,6 +84,7 @@ struct SolverOption {
 
 #[derive(Debug, StructOpt)]
 enum Opt {
+    /// Solve Problem
     #[structopt(name = "solve")]
     Solve {
         #[structopt(short = "s")]
@@ -101,6 +102,7 @@ enum Opt {
         input: Option<PathBuf>,
     },
 
+    /// Solve Problem by Simulated Annealing
     #[structopt(name = "annealing")]
     Annealing {
         #[structopt(short = "s")]
@@ -122,6 +124,7 @@ enum Opt {
         input: Option<PathBuf>,
     },
 
+    /// Pack solutions
     #[structopt(name = "pack")]
     Pack,
 
@@ -1483,6 +1486,10 @@ fn solve(
             if let Some(cmd) = state.robots[i].queue.pop() {
                 // FIXME: 他のコマンド使う場合は実装が必要
                 match &cmd {
+                    Command::AttachWheel => {
+                        // do nothing
+                        continue;
+                    }
                     Command::Turn(b) => state.rotate(*b, i),
                     Command::Move(dx, dy) => {
                         let nx = state.robots[i].x + dx;
@@ -1815,7 +1822,67 @@ fn solve(
 
             let ((nx, ny), dist, _) = n.unwrap();
 
-            if opt.use_drill.is_some() && dist >= opt.use_drill.unwrap() && state.items[3] > 0 {
+            if false
+                && state.items[2] > 0
+                && state.items[3] > 0
+                && state.robots[i].fast_count == 0
+                && opt.use_drill.is_some()
+                && dist >= opt.use_drill.unwrap() * 2
+            {
+                let mut found = None;
+                'outer2: for d in 1..=60_i64 {
+                    for j in 0..d {
+                        let ps = [(d - j, -j), (-j, -d + j), (-d + j, j), (j, d - j)];
+                        for &(dx, dy) in ps.iter() {
+                            let xx = state.robots[i].x + dx;
+                            let yy = state.robots[i].y + dy;
+                            if xx >= 0
+                                && xx < w
+                                && yy >= 0
+                                && yy < h
+                                && dx % 2 == 0
+                                && dy % 2 == 0
+                                && satisfies(state.bd[yy as usize][xx as usize])
+                            {
+                                found = Some((xx, yy));
+                                break 'outer2;
+                            }
+                        }
+                    }
+                }
+                if let Some((tx, ty)) = found {
+                    dbg!("*** USE HYPER DRILL ***");
+
+                    state.items[3] -= 1;
+                    state.items[2] -= 1;
+                    state.robots[i].queue.push(Command::AttachWheel);
+                    cmds.push(Command::StartDrill);
+                    state.robots[i].drill_time += 30 + 1;
+                    state.robots[i].fast_count += 50 + 1;
+
+                    let mut cx = state.robots[i].x;
+                    let mut cy = state.robots[i].y;
+                    while (cx, cy) != (tx, ty) {
+                        if cx != tx {
+                            let dx = if cx < tx { 1 } else { -1 };
+                            state.robots[i].queue.push(Command::Move(dx, 0));
+                            cx += dx * 2;
+                        } else {
+                            let dy = if cy < ty { 1 } else { -1 };
+                            state.robots[i].queue.push(Command::Move(0, dy));
+                            cy += dy * 2;
+                        }
+
+                    }
+                    continue;
+                }
+            }
+
+            if state.items[2] == 0
+                && opt.use_drill.is_some()
+                && dist >= opt.use_drill.unwrap()
+                && state.items[3] > 0
+            {
                 let mut found = None;
                 'outer: for d in 1..=30_i64 {
                     for j in 0..d {
@@ -1835,9 +1902,8 @@ fn solve(
                         }
                     }
                 }
-
                 if let Some((tx, ty)) = found {
-                    // dbg!("*** USE DRILL ***");
+                    dbg!("*** USE DRILL ***");
 
                     state.items[3] -= 1;
                     cmds.push(Command::StartDrill);
@@ -1855,11 +1921,11 @@ fn solve(
                             state.robots[i].queue.push(Command::Move(0, dy));
                             cy += dy;
                         }
+
                     }
                     continue;
                 }
             }
-
             let dx = nx - state.robots[i].x;
             let dy = ny - state.robots[i].y;
 
@@ -1929,6 +1995,8 @@ fn solve(
         // state.dump();
         ret.push(cmds);
     }
+
+    assert!(state.rest == 0);
 
     ret
 }

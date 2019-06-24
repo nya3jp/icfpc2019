@@ -5,4 +5,6 @@ if [ -n "$1" ]; then
     extras="-b $1"
 fi
 
-./tanakh-solver solve --increase-mop $extras
+# ./tanakh-solver solve --increase-mop --aggressive-item --aggressive-teleport --spawn-delegate --change-clone-dir --use-drill=60 --vects-shuffle=2 --num-try=100 $extras
+
+./tanakh-solver annealing --increase-mop --aggressive-item --aggressive-teleport --spawn-delegate --change-clone-dir --use-drill=60 --vects-shuffle=16 --decay=0.995 $extras
