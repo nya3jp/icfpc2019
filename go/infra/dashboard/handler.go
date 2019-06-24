@@ -2,20 +2,23 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -287,65 +290,66 @@ func (h *handler) handleCSV(w http.ResponseWriter, r *http.Request, _ httprouter
 }
 
 func (h *handler) queryOptimalSolutions(ctx context.Context) ([]*solution, error) {
+	lock, err := os.Create("/tmp/metasolver.lock")
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
 	balance := loadBalance()
 
-	type bestKey struct {
-		problem string
-		clones  int
+	cmd := exec.CommandContext(ctx, "./run.sh", strconv.Itoa(balance))
+	cmd.Dir = "../metasolver"
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
 	}
-	bestMap := make(map[bestKey]*solution)
 
-	for _, clones := range []int{0, 1, 2, 3} {
-		ss, err := h.queryBestSolutions(ctx, strings.Repeat("C", clones))
+	records, err := csv.NewReader(bytes.NewBuffer(out)).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []int
+	for _, r := range records {
+		if len(r) < 3 {
+			return nil, errors.New("malformed CSV output")
+		}
+		id, err := strconv.Atoi(r[2])
 		if err != nil {
 			return nil, err
 		}
-		for _, s := range ss {
-			bestMap[bestKey{s.Problem, clones}] = s
-		}
+		ids = append(ids, id)
 	}
 
-	selected := make(map[string]*solution)
-	for k, s := range bestMap {
-		if k.clones == 0 {
-			selected[k.problem] = s
-		}
+	idifs := make([]interface{}, len(ids))
+	for i, id := range ids {
+		idifs[i] = id
 	}
 
-	for balance >= 2000 {
-		type candidate struct {
-			ratio float64
-			s     *solution
-		}
-		var cands []*candidate
-		for _, s := range selected {
-			c, ok := bestMap[bestKey{s.Problem, len(s.Purchase) + 1}]
-			if !ok {
-				continue
-			}
-			r := float64(s.Score) / float64(c.Score)
-			cands = append(cands, &candidate{r, c})
-		}
-		sort.Slice(cands, func(i, j int) bool {
-			return cands[i].ratio > cands[j].ratio
-		})
-		if len(cands) == 0 {
-			break
-		}
-		cand := cands[0]
-		if cand.ratio < 1.5 {
-			break
-		}
-		selected[cand.s.Problem] = cand.s
-		balance -= 2000
+	rows, err := h.db.QueryContext(ctx, fmt.Sprintf(`
+SELECT
+  id,
+  solver,
+  problem,
+  purchase,
+  evaluator,
+  score,
+  submitted
+FROM solutions
+WHERE
+  id IN (%s)
+ORDER BY problem ASC
+`, strings.TrimRight(strings.Repeat("?, ", len(ids)), ", ")), idifs...)
+	if err != nil {
+		return nil, err
 	}
-
-	var optimal []*solution
-	for _, s := range selected {
-		optimal = append(optimal, s)
-	}
-
-	return optimal, nil
+	defer rows.Close()
+	return scanSolutions(rows)
 }
 
 func (h *handler) queryBestSolutions(ctx context.Context, purchase string) ([]*solution, error) {

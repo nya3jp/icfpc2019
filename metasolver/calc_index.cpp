@@ -1,0 +1,1 @@
+../bakaming/score_calc/calc_index.cpp
