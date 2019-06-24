@@ -160,6 +160,7 @@ struct State {
     std::vector<std::string> map;
     std::vector<std::vector<bool>> painted;
     vector<Robot> robots;
+    int turns;
 
     int B, F, L, R, C;
     int rB, rF, rL, rR, rC;
@@ -170,6 +171,7 @@ struct State {
     vector<vector<int>> cell_scores;
 
     State(const Mine& mine, const string boosters) {
+        turns = 0;
         int W = mine.max_x, H = mine.max_y;
         robots.push_back(Robot(mine.cur_x, mine.cur_y));
         B = F = L = R = C = 0;
@@ -953,7 +955,7 @@ vector<RobotOrder> updateAfterMoves(const State& state,
                 }
             }
             robot_orders[k].turn_to_expire--;
-            if (remaining == 0 || robot_orders[k].turn_to_expire <= 0) {
+            if (remaining == 0 || robot_orders[k].turn_to_expire <= 0 || state.turns % 5 == 0) {
                 robot_orders[k].mode = 'W';
                 robot_orders[k].target_area.clear();
             } else {
@@ -962,7 +964,15 @@ vector<RobotOrder> updateAfterMoves(const State& state,
                 } else {
 
                 }
-                robot_orders[k].reserved_moves.erase(robot_orders[k].reserved_moves.begin());
+                if (robot_orders[k].reserved_moves.empty()) {
+                    robot_orders[k].mode = 'W';
+                } else {
+                    robot_orders[k].reserved_moves.erase(robot_orders[k].reserved_moves.begin());
+                    if (robot_orders[k].reserved_moves.empty()) {
+                        robot_orders[k].mode = 'W';
+                    }
+  
+                }
             }
         } else if (robot_orders[k].mode == 'G') {
             int dx = abs(state.robots[k].x == get<0>(robot_orders[k].target_path.back()));
@@ -1080,6 +1090,7 @@ vector<vector<Move>> solve(const State& initial_state) {
         vector<Move> last_moves(robot_moves.size());
         REP(k, robot_moves.size()) last_moves[k] = robot_moves[k][0];
         robot_orders = updateAfterMoves(state, robot_orders, last_moves);
+        state.turns++;
     }
     return history;
 }
