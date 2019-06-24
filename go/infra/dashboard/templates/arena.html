@@ -1,0 +1,34 @@
+{{ define "content" }}
+
+  <h1 class="my-4">
+    Arena
+  </h1>
+
+  <ul class="nav nav-tabs">
+    {{ range $p := .Purchases }}
+      <li class="nav-item">
+        <a class="nav-link {{ if eq $p $.Purchase }}active{{ end }}" href="?purchase={{ $p }}">{{ if $p }}{{ $p }}{{ else }}Base{{ end }}</a>
+      </li>
+    {{ end }}
+  </ul>
+
+    <style>th.c, td.c { width: 2px; padding: 0 !important; }</style>
+  <table class="table table-sm" style="table-layout: fixed">
+    <tbody>
+    {{ range .Solvers -}}
+      <tr>
+        <td style="width: 160px">{{ .Name }}</td>
+        {{- range .Problems -}}
+          {{- if . -}}
+            <td class="bg-success c">
+            </td>
+          {{- else -}}
+            <td class="c"></td>
+          {{- end -}}
+        {{- end -}}
+      </tr>
+    {{- end }}
+    </tbody>
+  </table>
+
+{{ end }}
