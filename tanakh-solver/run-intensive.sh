@@ -5,7 +5,7 @@ trials="50"
 if [[ -n "$2" ]]; then
     trials="$2"
 fi
-coins="B BF C CC CCC CCCC CF CCF F L CCCF"
+coins="B BF C CC CCC CCCC CCCCC CCCCCC CF CCF F L CCCF"
 if [[ -n "$3" ]]; then
     coins="$3"
 fi
