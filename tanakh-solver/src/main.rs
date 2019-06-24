@@ -62,6 +62,10 @@ struct SolverOption {
     /// Cloneしない
     #[structopt(long = "disable-clone")]
     disable_clone: bool,
+
+    // Randome に portal を drop する
+    #[structopt(long = "drop-portal-randomly")]
+    drop_portal_randomly: bool,
 }
 
 #[derive(Debug, StructOpt)]
@@ -188,6 +192,13 @@ impl Cell {
 type Pos = (i64, i64);
 
 const VECTS1: &[&[Pos]] = &[
+    &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+    &[(1, 0), (0, 1), (-1, 0), (0, -1)],
+    &[(-1, 0), (0, 1), (0, -1), (1, 0)],
+    &[(1, 0), (-1, 0), (0, 1), (0, -1)],
+    &[(-1, 0), (1, 0), (0, 1), (0, -1)],
+    &[(1, 0), (0, -1), (0, 1), (-1, 0)],
+
     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
     &[(0, -1), (1, 0), (0, 1), (-1, 0)],
     &[(1, 0), (0, -1), (-1, 0), (0, 1)],
@@ -1630,6 +1641,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
                     != Some(4)
                 && !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal()
+                && (!opt.drop_portal_randomly || rand::random::<usize>() % 400 == 0)
             {
                 state.robots[i].num_collected_portal -= 1;
                 state.portals.push((state.robots[i].x, state.robots[i].y));
