@@ -12,7 +12,11 @@ printf "Solving $input ...\n"
 for coin in "" $coins; do
     for shuffler in 1 2 5 10; do
 	echo "trying prob:$prob coin:'$coin' shuf:$shuffler"
-	sem -j+0 target/release/tanakh-solver solve $default_opts --vects-shuffle=$shuffler --num-try=50 -b "$coin" $input
+	purchase_opt=""
+	if [[ -n "$coin" ]]; then
+	    purchase_opt="-b $coin"
+	fi
+	sem -j+0 target/release/tanakh-solver solve $default_opts --vects-shuffle=$shuffler --num-try=50 $purchase_opt $input
     done
 done
 
@@ -23,7 +27,12 @@ for coin in "" $coins; do
     probname="$(printf "prob-%03d" $prob)"
     resdir="$(printf "results/%03d%s" $prob "$coin")"
     result="$(for I in ${resdir}/*.sol; do basename $I; done | sort -n | head -n 1)"
-    sem -j+0 ../submit.py --problem ${probname} --solver tanakh-mob-mojako --solution ${resdir}/${result} --purchase "$coin"
+    purchase_opt=""
+    if [[ -n "$coin" ]]; then
+	purchase_opt="--purchase $coin"
+    fi
+    sem -j+0 ../submit.py --problem ${probname} --solver tanakh-mob-mojako --solution ${resdir}/${result} $purchase_opt
+    sleep 1
 done
 
 sem --wait
