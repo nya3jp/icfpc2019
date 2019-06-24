@@ -40,8 +40,8 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	r.Handle("GET", "/dashboard", h.handleIndex)
 	r.Handle("GET", "/dashboard/arena", h.handleArena)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
-	r.Handle("GET", "/dashboard/zip", h.handleZip)
-	r.Handle("GET", "/dashboard/csv", h.handleCSV)
+	//r.Handle("GET", "/dashboard/zip", h.handleZip)
+	//r.Handle("GET", "/dashboard/csv", h.handleCSV)
 	r.ServeFiles("/static/*filepath", http.Dir("infra/dashboard/static"))
 	return r
 }
