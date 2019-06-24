@@ -121,7 +121,7 @@ func doMain() error {
 	go func() {
 		for _, problem := range args.problems {
 			for _, purchase := range args.purchases {
-				problem := problem
+				purchase, problem := purchase, problem
 				go func() {
 					defer lim.Use(1)()
 					runtime, err := evaluate(ctx, sc, tc, problem, purchase, args.solver, args.timeout)
@@ -130,7 +130,7 @@ func doMain() error {
 					}
 					ch <- runtime
 				}()
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 			}
 		}
 	}()
