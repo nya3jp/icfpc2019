@@ -23,6 +23,7 @@ type args struct {
 	solver    string
 	problems  []string
 	purchases []string
+	limit     int
 	timeout   time.Duration
 	execKey   string
 }
@@ -34,6 +35,7 @@ func parseArgs() (*args, error) {
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.StringVar(&args.solver, "solver", "", "")
 	fs.StringVar(&purchase, "purchase", "default", "")
+	fs.IntVar(&args.limit, "limit", 100, "")
 	fs.IntVar(&timeout, "timeout", 0, "")
 	fs.StringVar(&args.execKey, "execkey", "", "")
 
@@ -115,7 +117,7 @@ func doMain() error {
 	logf("Running %d jobs...", len(args.problems)*len(args.purchases))
 
 	ch := make(chan time.Duration, len(args.problems)*len(args.purchases))
-	lim := concurrent.NewLimit(300)
+	lim := concurrent.NewLimit(args.limit)
 	go func() {
 		for _, problem := range args.problems {
 			for _, purchase := range args.purchases {
