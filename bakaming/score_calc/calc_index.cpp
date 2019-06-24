@@ -96,6 +96,7 @@ void inputProbSize(string probsizePath){
     double x,y;
     ss>>probID>>x>>y;
     size[probID] = log2(x*y)*1000.0;
+    //cerr<<probID<<" "<<size[probID]<<endl;
   }
 }
 
@@ -104,7 +105,7 @@ void input(string solutionPath, string probsizePath){
   inputProbSize(probsizePath);
 }
 
-void setupValue_selfratio(){
+void setupValue_selfratio(string debugfile){
   map<string, int> baseScore;
   for(auto i: testcases){
     if(i.cost == 0){
@@ -115,17 +116,18 @@ void setupValue_selfratio(){
       }
     }
   }
-
+  ofstream ofs;
+  ofs.open(debugfile.c_str(), ios::out);
   for(auto &i: testcases){
     double value = ceil(size[i.probID]);
-    value -= ceil(size[i.probID]*i.step/baseScore[i.probID]);
+    value -= ceil(size[i.probID]*baseScore[i.probID]/i.step);
     i.value = value;
-    //cout<<i.print_debug()<<endl;
+    ofs<<i.print_debug()<<endl;
   }
-
+  ofs.close();
 }
 
-void setupValue_prevbestratio(){
+void setupValue_prevbestratio(string debugfile){
   map<string, int> baseScore;
   string tmpline;
   ifstream ifs;
@@ -145,17 +147,55 @@ void setupValue_prevbestratio(){
     }
   }
 
+  ofstream ofs;
+  ofs.open(debugfile.c_str(), ios::out);
   for(auto &i: testcases){
     double value = ceil(size[i.probID]);
-    value -= ceil(size[i.probID]*i.step/baseScore[i.probID]);
+    value -= ceil(size[i.probID]*baseScore[i.probID]/i.step);
     i.value = value;
-    //cout<<i.print_debug()<<endl;
+    ofs<<i.print_debug()<<endl;
   }
+  ofs.close();
 }
 
-int solve(int cost){
-  //setupValue_selfratio();
-  setupValue_prevbestratio();
+void setupValue_prevbestscore(string debugfile){
+  map<string, int> baseScore;
+  string tmpline;
+  ifstream ifs;
+  ifs.open("bestscore.txt");
+  while(getline(ifs,tmpline)){
+    int prob,steps;
+    char str[10];
+    sscanf(tmpline.c_str(), "%d, %d, %s",&prob, &steps, str);
+    string probIDstr = to_string(prob);
+    while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
+    probIDstr = "prob-"+probIDstr;
+    //cout<<prob<<" "<<steps<<" "<<str<<" "<<probIDstr<<endl;
+    if (baseScore.find(probIDstr) != baseScore.end()){
+      baseScore[probIDstr] = min(baseScore[probIDstr], steps);
+    } else {
+      baseScore[probIDstr] = steps;
+    }
+  }
+  ofstream ofs;
+  ofs.open(debugfile.c_str(), ios::out);
+  for(auto &i: testcases){
+    double value = ceil(size[i.probID]*baseScore[i.probID]/i.step);
+    i.value = value;
+    ofs<<i.print_debug()<<endl;
+  }
+  ofs.close();
+}
+
+int solve(int cost, int func, string debugfile){
+  void (* const valuefunc[])(string) = {
+    setupValue_selfratio,
+    setupValue_prevbestratio,
+    setupValue_prevbestscore
+  };
+  valuefunc[func](debugfile);
+  //setupValue_prevbestratio();
+  //setupValue_prevbestscore();
   ofstream ofs;
   for(int i=0;i<=cost;i++){
     dp[i][0] = -5000000.0;
@@ -167,7 +207,7 @@ int solve(int cost){
   int now=0;
 
   for(int i=1;i<=PROBMAX;i++){
-    cerr<<i<<endl;
+    cerr<<i<<" ";
     string probIDstr = to_string(i);
     while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
     probIDstr = "prob-"+probIDstr;
@@ -198,7 +238,7 @@ int solve(int cost){
   return now;
 }
 
-void output(int cost,int now){
+void output(int cost,int now, string outputfile){
 
   double value = 0.0;
   int index = -1;
@@ -211,7 +251,10 @@ void output(int cost,int now){
     }
   }
 
+  cerr<<index<<" "<<cost<<" "<<(cost-index)<<endl;
   ifstream ifs;
+  ofstream ofs;
+  ofs.open(outputfile.c_str(), ios::out);
   for(int i=PROBMAX ;i>=1;i--){
     string probIDstr = to_string(i);
     while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
@@ -221,15 +264,16 @@ void output(int cost,int now){
     ifs.close();
     stringstream ss{line};
     for(int j=0;j<=index;j++)ss>>prevstring[j];
-    cout<<testcases[prevstring[index]].origLine<<endl;
+    ofs<<testcases[prevstring[index]].origLine<<endl;
     index -= testcases[prevstring[index]].cost;
   }
+  ofs.close();
 }
 
 int main(int argc, char *argv[]){
-  //Usage ./a.out ./test.txt ./problemsize.txt 1000000
+  //Usage ./a.out ./test.txt ./problemsize.txt 1000000 2 ./value_debug.txt ./out.txt
   input(argv[1], argv[2]);
-  int now = solve(stoi(argv[3]));
-  output(stoi(argv[3]),now);
+  int now = solve(stoi(argv[3]),stoi(argv[4]),argv[5]);
+  output(stoi(argv[3]),now,argv[6]);
   return 0;
 }
