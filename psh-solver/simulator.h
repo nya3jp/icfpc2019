@@ -276,6 +276,12 @@ class Map {
 
   std::string ToString() const;
 
+  int collectedB() const { return collected_b_; }
+  int collectedF() const { return collected_f_; }
+  int collectedL() const { return collected_l_; }
+  int collectedR() const { return collected_r_; }
+  int collectedC() const { return collected_c_; }
+  
  private:
   inline size_t Index(const Point& p) const {
     return p.y * width_ + p.x;
