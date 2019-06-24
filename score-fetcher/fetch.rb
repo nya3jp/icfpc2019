@@ -77,24 +77,16 @@ end
 
 current_block = get_current_block_num
 
-cached_tasks = JSON.parse(File.read('tasks.json'))
-cached_puzzle = JSON.parse(File.read('puzzle.json'))
-cached_balances = JSON.parse(File.read('balances.json'))
-cached_excluded = JSON.parse(File.read('excluded.json'))
+cached_tasks = []
+cached_puzzle = []
+cached_balances = []
+cached_excluded = []
 
 (FIRST_VALID_BLOCK..current_block).each{|block|
-  if cached_tasks.length < (block - FIRST_VALID_BLOCK)
-    cached_tasks.push(fetch_task(block))
-  end
-  if cached_puzzle.length < (block - FIRST_VALID_BLOCK)
-    cached_puzzle.push(fetch_puzzle(block))
-  end
-  if cached_balances.length < (block - FIRST_VALID_BLOCK)
-    cached_balances.push(fetch_balances(block))
-  end
-  if cached_excluded.length < (block - FIRST_VALID_BLOCK)
-    cached_excluded.push(get_excluded(block))
-  end
+  cached_tasks.push(fetch_task(block))
+  cached_puzzle.push(fetch_puzzle(block))
+  cached_balances.push(fetch_balances(block))
+  cached_excluded.push(get_excluded(block))
 }
 File.write('tasks.json', JSON.pretty_generate(cached_tasks))
 File.write('puzzle.json', JSON.pretty_generate(cached_puzzle))
@@ -102,8 +94,8 @@ File.write('balances.json', JSON.pretty_generate(cached_balances))
 File.write('excluded.json', JSON.pretty_generate(cached_excluded))
 
 rankings = []
-((FIRST_VALID_BLOCK+1)..(current_block-1)).each{|block|
-  block -= 3
+((FIRST_VALID_BLOCK+1)..current_block).each{|block|
+  block -= FIRST_VALID_BLOCK
   before = cached_balances[block - 1]
   after = cached_balances[block]
   ranking = []

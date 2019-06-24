@@ -15,6 +15,8 @@ rankings.each{|ranking|
 total_team_num = team_list.length
 current_ranking = balances.last.sort_by {|v| -v[1]}
 
+# File.write('current.json', JSON.pretty_generate(current_ranking))
+
 relative_rankings = []
 
 rankings.each{|ranking|
@@ -23,11 +25,17 @@ rankings.each{|ranking|
   ranking.each{|v|
     team = v.keys[0]
     score = v.values[0] / (top_score + 0.0)
-    relative_rank[team] = score
+    if score < 0.005
+      relative_rank[team] = relative_rankings.last[team]
+    else
+      relative_rank[team] = score
+    end
   }
 
   relative_rankings.push(relative_rank)
 }
+
+File.write('dump.json', JSON.pretty_generate(relative_rankings))
 
 relative_scores_by_team = []
 current_ranking.each{|team|
