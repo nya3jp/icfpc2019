@@ -2,6 +2,7 @@ google.charts.load('current', {packages: ['corechart', 'line']});
 google.charts.setOnLoadCallback(draw);
 
 data_url = 'https://storage.googleapis.com/sound-type-system/rankings/ranking_data.json'
+last = 30;
 
 function filterChange(filter) {
     if (filter == "") {
@@ -9,6 +10,11 @@ function filterChange(filter) {
     } else {
       drawWithFilter(filter);
     }
+}
+
+function lastChange(new_last) {
+  last = new_last;
+  draw();
 }
 
 function filtering(filter, raw_data) {
@@ -30,8 +36,6 @@ function drawWithFilter(filter) {
     if (this.readyState == 4 && this.status == 200) {
       var raw_data = JSON.parse(this.responseText);
       filtered = filtering(filter, raw_data);
-      console.log(filter);
-      console.log(filtered);
       drawRanking(filtered);
     }
   }
@@ -64,15 +68,15 @@ function drawRanking(raw_data) {
   });
 
    rows = [];
-   for (var i = 0; i < rounds; ++i) {
-      rows.push([i]);
+   for (var i = 0; i < last; ++i) {
+      r = rounds - last + i;
+      rows.push([r]);
       raw_data.forEach(function(elem) {
         for (team in elem) {
           rows[i].push(elem[team][i]);
         }
       });
    }
-   console.log(rows);
    data.addRows(rows);
 
    var options = {

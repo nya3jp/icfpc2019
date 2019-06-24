@@ -15,7 +15,7 @@
   <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <a class="navbar-brand" href="/dashboard">Sound! TypeSystem</a>
 
-    <div>
+    <div class="collapse navbar-collapse">
       <ul class="navbar-nav mr-auto">
         <li class="nav-item">
           <a class="nav-link" href="/dashboard/zip">ZIP</a>
@@ -24,6 +24,9 @@
           <a class="nav-link" href="/dashboard/csv">CSV</a>
         </li>
       </ul>
+      <span class="navbar-text">
+        {{ .Balance }} LAM
+      </span>
     </div>
   </nav>
 
