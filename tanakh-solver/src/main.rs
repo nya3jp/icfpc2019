@@ -73,6 +73,10 @@ struct SolverOption {
     #[structopt(long = "num-try", default_value = "1")]
     num_try: usize,
 
+    /// Teleport しない
+    #[structopt(long = "disable-teleport")]
+    disable_teleport: bool,
+
     // Randome に portal を drop する
     #[structopt(long = "drop-portal-randomly")]
     drop_portal_randomly: bool,
@@ -1677,7 +1681,8 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
-            if state.robots[i].num_collected_portal > 0
+            if !opt.disable_teleport
+                && state.robots[i].num_collected_portal > 0
                 && state.items[5] > 0
                 && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
                     != Some(4)

@@ -70,10 +70,10 @@ function drawRanking(raw_data) {
    rows = [];
    for (var i = 0; i < last; ++i) {
       r = rounds - last + i;
-      rows.push([r]);
+      rows.push([r + 3]);
       raw_data.forEach(function(elem) {
         for (team in elem) {
-          rows[i].push(elem[team][i]);
+          rows[i].push(elem[team][r]);
         }
       });
    }
