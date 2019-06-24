@@ -121,7 +121,7 @@ func doMain() error {
 				}
 				ch <- runtime
 			}()
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 
