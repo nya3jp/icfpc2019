@@ -1134,7 +1134,7 @@ impl State {
     // }
 
     fn overwrap_score(&self, x: i64, y: i64, i: usize) -> i64 {
-        if true {
+        if false {
             0
         } else {
             let h = self.bd.len() as i64;
@@ -1170,22 +1170,22 @@ impl State {
                     }
                 }
 
-                if !ok {
-                    penalty += 3;
-                    continue;
-                }
+                // if !ok {
+                //     penalty += 3;
+                //     continue;
+                // }
 
                 if bodies.contains(&(tx, ty)) {
                     penalty += 1;
                     continue;
                 }
 
-                if self.bd[ty as usize][tx as usize].is_painted() {
-                    penalty += 3;
-                    continue;
-                }
+                // if self.bd[ty as usize][tx as usize].is_painted() {
+                //     penalty += 3;
+                //     continue;
+                // }
 
-                // penalty -= 3;
+                // penalty -= 1;
             }
 
             penalty
@@ -1384,11 +1384,9 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
     let mut fin = false;
 
-    let mut steps = 0;
     while !fin {
         let mut cmds = vec![];
         let robot_num = state.robots.len();
-        steps += 1;
         let shortest_mop = state
             .robots
             .iter()
@@ -1407,6 +1405,9 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             if let Some(turn) = opt.vects_shuffle {
                 if rand::random::<usize>() % turn == 0 {
+                    // if ret.len() % turn == 0 {
+                    // state.robots[i].vect.shuffle(&mut rand::thread_rng());
+
                     loop {
                         state.robots[i].vect.shuffle(&mut rand::thread_rng());
                         if if i % 2 == 0 {
@@ -1417,8 +1418,14 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                             break;
                         }
                     }
+
                 }
             }
+
+            // if rand::random::<usize>() % 777 == 0 {
+            //     cmds.push(Command::Turn(rand::random()));
+            //     continue;
+            // }
 
             // アイテム取得処理
             collect_item(&mut state, i);
@@ -1527,15 +1534,22 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            if !state.pending_clone.is_empty() && state.robots[i].target.is_none() && (opt.aggressive_c_collect || i == 0) {
-                let (tx, ty) = nearest(&state, i, |x, y, _| state.pending_clone.contains(&(x, y))).unwrap().2;
+            if !state.pending_clone.is_empty()
+                && state.robots[i].target.is_none()
+                && (opt.aggressive_c_collect || i == 0)
+            {
+                let (tx, ty) = nearest(&state, i, |x, y, _| state.pending_clone.contains(&(x, y)))
+                    .unwrap()
+                    .2;
                 state.robots[i].target = Some((tx, ty));
                 state.pending_clone.remove(&(tx, ty));
             }
 
             if !state.robots[i].target.is_none() {
                 let (tx, ty) = state.robots[i].target.unwrap();
-                let (nx, ny) = nearest(&state, i, |x, y, _| (tx == x && ty == y)).unwrap().0;
+                let (nx, ny) = nearest(&state, i, |x, y, _| (tx == x && ty == y))
+                    .unwrap()
+                    .0;
                 let dx = nx - state.robots[i].x;
                 let dy = ny - state.robots[i].y;
                 if dx.abs() + dy.abs() == 1 {
@@ -1563,34 +1577,34 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             if i == 0 {
                 /*
-                if state.clone_num > 0 {
-                    // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
-                    let dx = nx - state.robots[i].x;
-                    let dy = ny - state.robots[i].y;
-                    if dx.abs() + dy.abs() == 1 {
-                        cmds.push(Command::Move(dx, dy));
-                        state.move_to(nx, ny, i, false);
-                        if state.robots[i].fast_count > 0 {
-                            collect_item(&mut state, i);
-                            let nnx = nx + dx;
-                            let nny = ny + dy;
-                            if 0 <= nnx
-                                && nnx < w
-                                && 0 <= nny
-                                && nny < h
-                                && !state.bd[nny as usize][nnx as usize].is_wall()
-                            {
-                                state.move_to(nnx, nny, i, false);
-                            }
-                        }
-                    } else {
-                        cmds.push(Command::Teleport(nx, ny));
-                        state.move_to(nx, ny, i, false);
-                    }
-                    continue;
-                }
-*/
+                                if state.clone_num > 0 {
+                                    // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
+                                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
+                                    let dx = nx - state.robots[i].x;
+                                    let dy = ny - state.robots[i].y;
+                                    if dx.abs() + dy.abs() == 1 {
+                                        cmds.push(Command::Move(dx, dy));
+                                        state.move_to(nx, ny, i, false);
+                                        if state.robots[i].fast_count > 0 {
+                                            collect_item(&mut state, i);
+                                            let nnx = nx + dx;
+                                            let nny = ny + dy;
+                                            if 0 <= nnx
+                                                && nnx < w
+                                                && 0 <= nny
+                                                && nny < h
+                                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                                            {
+                                                state.move_to(nnx, nny, i, false);
+                                            }
+                                        }
+                                    } else {
+                                        cmds.push(Command::Teleport(nx, ny));
+                                        state.move_to(nx, ny, i, false);
+                                    }
+                                    continue;
+                                }
+                */
                 if opt.aggressive_teleport
                     && state.portal_num > 0
                     && state.robots[i].num_collected_portal == 0
@@ -1967,7 +1981,14 @@ fn solve_lightning(
     if show_solution || name == "stdin" {
         println!("{}", encode_commands(&ans));
     } else {
-        save_solution(LIGHTNING_DIR, name, &ans, score, force_save)?;
+        save_solution(
+            LIGHTNING_DIR,
+            name,
+            &ans,
+            score,
+            force_save,
+            bought_boosters,
+        )?;
     }
 
     Ok(())
@@ -2029,15 +2050,18 @@ fn save_solution(
     ans: &Solution,
     score: i64,
     force_save: bool,
+    bought_boosters: &str,
 ) -> Result<()> {
     // println!("*****: {:?} {:?} {:?} {}", root, name, score);
 
-    let best = get_best_score(root, name)?.unwrap_or(0);
+    let name = name.to_owned() + bought_boosters;
+
+    let best = get_best_score(root, &name)?.unwrap_or(0);
     if best == 0 || best > score || force_save {
         if best == 0 || best > score {
-            eprintln!("* Best score for {}: {} -> {}", name, best, score);
+            eprintln!("* Best score for {}: {} -> {}", &name, best, score);
         }
-        let pb = get_result_dir(root, name)?;
+        let pb = get_result_dir(root, &name)?;
         fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
     }
     Ok(())
