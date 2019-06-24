@@ -148,9 +148,14 @@ func evaluate(ctx context.Context, sc *storage.Client, tc *tasklet.Client, probl
 		Cmd: fmt.Sprintf(`set -ex
 cp problems/%s.desc task.desc
 timeout %f ./solve-task %s < task.desc > $OUT_DIR/out.txt 2> /dev/null
-curl -s -d '{"solver": "%s", "problem": "%s", "purchase": "%s", "solution": "'"$(cat "$OUT_DIR/out.txt")"'"}' -u :c868a5215b6bfb6161c6a43363e62d45 http://sound.nya3.jp/submit | tee $OUT_DIR/validation.txt
+while :; do
+  curl -s -d '{"solver": "%s", "problem": "%s", "purchase": "%s", "solution": "'"$(cat "$OUT_DIR/out.txt")"'"}' -u :c868a5215b6bfb6161c6a43363e62d45 http://sound.nya3.jp/submit | tee $OUT_DIR/validation.txt
+  if ! grep -q "The server encountered an error" $OUT_DIR/validation.txt; then break; fi
+  sleep $(python3 -c 'import random; print(random.random()*10)')
+done
+if grep -q "The server encountered an error" $OUT_DIR/validation.txt; then exit 50; fi
 if grep -q "duplicate solution" $OUT_DIR/validation.txt; then exit 0; fi
-if grep -q ERROR $OUT_DIR/validation.txt; then exit 111; fi
+if grep -q ERROR $OUT_DIR/validation.txt; then exit 40; fi
 `, problem, timeout.Seconds(), purchase, solver, problem, purchase),
 		Pkgs: []*tasklet.Pkg{
 			{URL: "gs://sound-type-system/packages/problems.tar.gz"},
