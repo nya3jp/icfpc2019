@@ -1,9 +1,13 @@
 #!/bin/bash -e
 
 probrange="$1"
-coins="B BF C CC CCC CCCC CF CCF F L CCCF"
+trials="50"
 if [[ -n "$2" ]]; then
-   coins="$2"
+    trials="$2"
+fi
+coins="B BF C CC CCC CCCC CCCCC CCCCCC CF CCF F L CCCF"
+if [[ -n "$3" ]]; then
+    coins="$3"
 fi
 default_opts="--increase-mop --aggressive-item --aggressive-teleport --spawn-delegate --change-clone-dir --use-drill=60 "
 for prob in $(seq $probrange); do
@@ -17,7 +21,7 @@ for prob in $(seq $probrange); do
 	    if [[ -n "$coin" ]]; then
 		purchase_opt="-b $coin"
 	    fi
-	    sem -j+0 target/release/tanakh-solver solve $default_opts --vects-shuffle=$shuffler --num-try=50 $purchase_opt $input
+	    sem -j+0 target/release/tanakh-solver solve $default_opts --vects-shuffle=$shuffler --num-try=$trials $purchase_opt $input
 	done
     done
 done

@@ -28,6 +28,11 @@
 
 using namespace std;
 
+std::random_device rd;
+std::mt19937 rng(rd());
+std::uniform_real_distribution<> dis01;
+
+
 #define REP(i,n) for(int i=0; i<(int)(n); i++)
 #define FOR(i,b,e) for(int i=(b); i<(int)(e); i++)
 #define EACH(i,c) for(__typeof((c).begin()) i=(c).begin(); i!=(c).end(); i++)
@@ -49,6 +54,7 @@ const int DX[] = {1, 0, -1, 0};
 const int DY[] = {0, 1, 0, -1};
 const char DXY_DIR[] = "DWAS";
 set<tuple<int,int>> gExcludedGoals;
+
 
 struct Move {
     char move_type;
@@ -131,9 +137,11 @@ struct RobotOrder {
     // P: Paint target area (B, F, L, T are allowed.)
     // C: Use C booster by following |target_path| to X;
     // R: Use R at the current pos;
+    // F: Follow given moves;
     char mode;
     vector<vector<bool>> target_area;
     vector<tuple<int, int>> target_path;
+    vector<Move> reserved_moves;
     int turn_to_expire;
     RobotOrder() : mode('W') {}
     void print() {
@@ -275,6 +283,7 @@ struct State {
                 }
             }
         }
+#if 1
         // Consider distance to nearlest dot;
         const int R = (int)robots.size();
         REP(k, R) {
@@ -312,10 +321,14 @@ struct State {
             if (dist_to_nearest != INF)
                 score -= dist_to_nearest;
         }
+    #endif
 
         // Consider boosters
-        score += gotF * 10000;
-        score += gotB * 10000;
+        score += gotF * 1000;
+        score += gotB * 1000;
+        score += gotC * 3000;
+        score += gotL * 1000;
+        score += gotR * 1000;
 
         return score;
     }
@@ -336,7 +349,7 @@ struct State {
         } else if (move_type == 'B') {
             return B > 0;
         } else if (move_type == 'F') {
-            return F > 0;
+            return F > 0 && dis01(rng) < 0.3;
         } else if (move_type == 'C') {
             cerr << "------- check if C is doable ---" << endl;
             cerr << "robot = (" << robots[r_idx].x << "," << robots[r_idx].y << ")" << endl;
@@ -735,12 +748,10 @@ vector<tuple<int, pair<int,int>, vector<vector<bool>>>> findNotOwnedIslands(
 }
 
 vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& order) {
-    constexpr int BEAM_WIDTH = 6;
-    constexpr int BEAM_DEPTH = 6;
+    constexpr int BEAM_WIDTH = 8;
+    constexpr int BEAM_DEPTH = 8;
     const int H = (int)state.map.size();
     const int W = (int)state.map[0].size();
-
-    
     REP(i, H) {
         REP(j, W) {
             if (!state.painted[i][j]) {
@@ -868,17 +879,13 @@ vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrde
         int sy = state.robots[k].y;
         auto islands = findNotOwnedIslands(sx, sy, k, 4, 15, owner_map, state);
         sort(islands.begin(), islands.end());
-        cerr << "---------------------" << endl;
-        REP(i, islands.size()) {
-            cerr << "size: " << get<0>(islands[i]);
-        }
         for (int i = 1; i < (int)islands.size(); i++) { // choose the smallest islands and release others.
             fillByOwner(get<1>(islands[i]).first, get<1>(islands[i]).second, -1, 15, owner_map, state);
         }
         if (islands.size() > 0) {
             robot_orders[k].mode = 'P';
             robot_orders[k].target_area = get<2>(islands[0]);
-            robot_orders[k].turn_to_expire = 1;
+            robot_orders[k].turn_to_expire = 5;
         }
     }
     REP(k, R) {
@@ -935,7 +942,7 @@ vector<RobotOrder> updateAfterMoves(const State& state,
     REP(k, robot_orders.size()) {
         if (robot_orders[k].mode == 'C' && moves[k].move_type == 'C') {
             robot_orders[k].mode = 'W';
-        } else if (robot_orders[k].mode == 'P') {
+        } else if (robot_orders[k].mode == 'P' || robot_orders[k].mode == 'F') {
             int remaining = 0;
             REP(i, H) REP(j, W) {
                 if (robot_orders[k].target_area[i][j]) {
@@ -949,6 +956,13 @@ vector<RobotOrder> updateAfterMoves(const State& state,
             if (remaining == 0 || robot_orders[k].turn_to_expire <= 0) {
                 robot_orders[k].mode = 'W';
                 robot_orders[k].target_area.clear();
+            } else {
+                if (robot_orders[k].mode == 'P') {
+                    robot_orders[k].mode = 'F';
+                } else {
+
+                }
+                robot_orders[k].reserved_moves.erase(robot_orders[k].reserved_moves.begin());
             }
         } else if (robot_orders[k].mode == 'G') {
             int dx = abs(state.robots[k].x == get<0>(robot_orders[k].target_path.back()));
@@ -962,23 +976,18 @@ vector<RobotOrder> updateAfterMoves(const State& state,
     return robot_orders;    
 }
 
-vector<Move> computeBestMoves(const State& state, const vector<RobotOrder>& robot_orders) {
+vector<vector<Move>> computeBestMoves(const State& state, const vector<RobotOrder>& robot_orders) {
     int H = (int)state.map.size();
     int W = (int)state.map[0].size();
     int R = (int)state.robots.size();
-    /*    
-    std::random_device rd;
-    std::mt19937 rng(rd());
-    std::uniform_int_distribution<int> rand_dist(0, 3);
-    */
-
-    vector<Move> robot_moves(R);
+    
+    vector<vector<Move>> robot_moves(R);
 
     // Get next move of each robots. (If they're not using boosters)
     REP(k, R) {
         if (robot_orders[k].mode == 'C') {
             if (state.can(k, 'C')) {
-                robot_moves[k] = Move('C');
+                robot_moves[k] = vector<Move>(1, Move('C'));
             } else {
                 int path_idx = 0;
                 REP(i, robot_orders[k].target_path.size()) {
@@ -998,7 +1007,7 @@ vector<Move> computeBestMoves(const State& state, const vector<RobotOrder>& robo
                         break;
                     }
                 }
-                robot_moves[k] = Move(direction);
+                robot_moves[k] = vector<Move>(1, Move(direction));
             }
         }
         if (robot_orders[k].mode == 'G') {
@@ -1022,7 +1031,7 @@ vector<Move> computeBestMoves(const State& state, const vector<RobotOrder>& robo
                     }
                 }
                 if (direction == 'W' || direction == 'S' || direction == 'A' || direction == 'D') {
-                    robot_moves[k] = Move(direction);
+                    robot_moves[k] = vector<Move>(1, Move(direction));
                 } else {
                     cerr << "EEEEEEEEE " << direction;
                     cerr << "(" << state.robots[k].x << ", " << state.robots[k].y << ")" << endl;
@@ -1032,15 +1041,18 @@ vector<Move> computeBestMoves(const State& state, const vector<RobotOrder>& robo
                     exit(1);
                 }
             } else {
-                robot_moves[k] = Move('Z');
+                robot_moves[k] = vector<Move>(1, Move('Z'));
             }
         }
         if (robot_orders[k].mode == 'P') {
             vector<Move> moves = computeBestMovesForP(state, k, robot_orders[k]);
-            robot_moves[k] = moves[0];
+            robot_moves[k] = moves;
+        }
+        else if (robot_orders[k].mode == 'F') {
+            robot_moves[k] = vector<Move>(1, *robot_orders[k].reserved_moves.begin());
         }
         if (robot_orders[k].mode == 'W') {
-            robot_moves[k] = Move('Z');
+            robot_moves[k] = vector<Move>(1, Move('Z'));
         }
     }
     return robot_moves;
@@ -1053,16 +1065,21 @@ vector<vector<Move>> solve(const State& initial_state) {
     while (!state.finished()) {
         robot_orders = computeRobotOrders(state, robot_orders);
         state.print(robot_orders);
-        vector<Move> robot_moves = computeBestMoves(state, robot_orders);
+        vector<vector<Move>> robot_moves = computeBestMoves(state, robot_orders);
         while (history.size() < robot_moves.size())
             history.push_back(vector<Move>());
         state.enableReservedBoosters();
         REP(k, robot_moves.size()) {
-            auto move_result = state.move(k, robot_moves[k].move_type);
+            if (robot_orders[k].mode == 'P') {
+                robot_orders[k].reserved_moves = robot_moves[k];
+            }
+            auto move_result = state.move(k, robot_moves[k][0].move_type);
             state = move_result.second;
             history[k].push_back(move_result.first);
         }
-        robot_orders = updateAfterMoves(state, robot_orders, robot_moves);
+        vector<Move> last_moves(robot_moves.size());
+        REP(k, robot_moves.size()) last_moves[k] = robot_moves[k][0];
+        robot_orders = updateAfterMoves(state, robot_orders, last_moves);
     }
     return history;
 }
@@ -1086,6 +1103,7 @@ string output(const vector<vector<Move>>& history) {
 }
 
 int main(int argc, char** argv) {
+    dis01 = std::uniform_real_distribution<>(0.0, 1.0);
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
     google::InstallFailureSignalHandler();
