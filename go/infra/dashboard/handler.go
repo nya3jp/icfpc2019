@@ -161,6 +161,7 @@ type arenaValues struct {
 	Purchase  string
 	Problems  []string
 	Solvers   []*arenaSolver
+	Total     int32
 	Purchases []string
 	Balance   int
 }
@@ -211,6 +212,11 @@ func (h *handler) handleArena(w http.ResponseWriter, r *http.Request, _ httprout
 			}
 		}
 
+		var total int32
+		for _, score := range bestScores {
+			total += score
+		}
+
 		for _, s := range ss {
 			if s.Score == bestScores[s.Problem] {
 				solverMap[s.Solver].Problems[problemMap[s.Problem]] = true
@@ -240,6 +246,7 @@ func (h *handler) handleArena(w http.ResponseWriter, r *http.Request, _ httprout
 			Purchase:  purchase,
 			Problems:  problems,
 			Solvers:   validSolvers,
+			Total:     total,
 			Purchases: ps,
 			Balance:   loadBalance(),
 		}
