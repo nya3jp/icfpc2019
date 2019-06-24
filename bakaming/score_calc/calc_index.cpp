@@ -8,6 +8,8 @@
 #include<map>
 #include<set>
 #include<cmath>
+#include<queue>
+#include<functional>
 
 #define DPMAX 1000000
 #define PROBMAX 300
@@ -56,7 +58,7 @@ bool operator < (const TestCase a, const TestCase b){
   if(a.probID != b.probID){
     return a.probID < b.probID;
   } else if(a.cost != b.cost){
-    return a.cost < b.cost;
+    return a.cost > b.cost;
   } else {
     return a.step < b.step;
   }
@@ -158,10 +160,11 @@ void setupValue_prevbestratio(string debugfile){
   ofs.close();
 }
 
+//THIS IS BEST
 void setupValue_prevbestscore(string debugfile){
   map<string, int> baseScore;
   string tmpline;
-  ifstream ifs;
+/*  ifstream ifs;
   ifs.open("bestscore.txt");
   while(getline(ifs,tmpline)){
     int prob,steps;
@@ -177,14 +180,64 @@ void setupValue_prevbestscore(string debugfile){
       baseScore[probIDstr] = steps;
     }
   }
+*/
+  for(auto &i: testcases){
+    if (baseScore.find(i.probID) != baseScore.end()){
+      baseScore[i.probID] = min(baseScore[i.probID], i.step);
+    } else {
+      baseScore[i.probID] = i.step;
+    }
+  }
+
+
+  //ofstream ofs;
+  //ofs.open(debugfile.c_str(), ios::out);
+  for(auto &i: testcases){
+    double value = ceil(size[i.probID]*baseScore[i.probID]/i.step);
+    i.value = value;
+    cerr<<size[i.probID]<<" "<<value<<endl;
+    //ofs<<i.print_debug()<<endl;
+  }
+  //ofs.close();
+
+//TODO
+/*
+  vector<TestCase> tmpTestCase;
+  int solutionPointer=0;
+
+  for(int i=1;i<=PROBMAX;i++){
+    string probIDstr = to_string(i);
+    while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
+    probIDstr = "prob-"+probIDstr;
+
+    auto c = [](TestCase a,TestCase b){return a.value > b.value;};
+    priority_queue<TestCase,vector<TestCase>, decltype(c) > pq(c);
+
+    while(solutionPointer<(int)testcases.size()){
+      if(testcases[solutionPointer].probID != probIDstr) break;
+      while(!pq.empty() && pq.top().value < testcases[solutionPointer].value){
+        pq.pop();
+      }
+      pq.push(testcases[solutionPointer]);
+      solutionPointer++;
+    }
+    while(!pq.empty()){
+      tmpTestCase.push_back(pq.top());
+      pq.pop();
+    }
+  }
+
+  testcases = tmpTestCase;
+*/
   ofstream ofs;
   ofs.open(debugfile.c_str(), ios::out);
   for(auto &i: testcases){
-    double value = ceil(size[i.probID]*baseScore[i.probID]*0.75/i.step);
-    i.value = value;
     ofs<<i.print_debug()<<endl;
   }
   ofs.close();
+
+//TODOTODO
+
 }
 
 void setupValue_disturbScore(string debugfile){
@@ -296,6 +349,7 @@ void output(int cost,int now, string outputfile){
   cerr<<index<<" "<<cost<<" "<<(cost-index)<<endl;
   ifstream ifs;
   ofstream ofs;
+  double total =0.0;
   ofs.open(outputfile.c_str(), ios::out);
   for(int i=PROBMAX ;i>=1;i--){
     string probIDstr = to_string(i);
@@ -307,8 +361,10 @@ void output(int cost,int now, string outputfile){
     stringstream ss{line};
     for(int j=0;j<=index;j++)ss>>prevstring[j];
     ofs<<testcases[prevstring[index]].origLine<<endl;
+    total += testcases[prevstring[index]].value;
     index -= testcases[prevstring[index]].cost;
   }
+  cerr<<total<<endl;
   ofs.close();
 }
 
