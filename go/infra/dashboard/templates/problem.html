@@ -89,7 +89,8 @@
         setInput(id, blob, name);
     }
 
-    async function waitLoad() {
+    async function loadSolution(id) {
+        await setInputUrl('submit_solution', 'https://storage.googleapis.com/sound-type-system/solutions/' + id + '/solution.txt');
         const button = document.getElementById('execute_solution');
         await new Promise((resolve) => {
             const ticket = setInterval(() => {
@@ -107,9 +108,8 @@
         await setInputUrl('submit_task', 'https://storage.googleapis.com/sound-type-system/problems/{{ .Problem }}.desc');
         setInputText('submit_boosters', {{ .Purchase }}, {{ .Purchase }});
         {{ if .BestSolution }}
-        await setInputUrl('submit_solution', 'https://storage.googleapis.com/sound-type-system/solutions/' + {{ .BestSolution.ID }} + '/solution.txt');
+        await loadSolution({{ .BestSolution.ID }});
         {{ end }}
-        await waitLoad();
     }
 
     main();
