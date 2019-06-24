@@ -101,6 +101,27 @@ enum Opt {
         input: Option<PathBuf>,
     },
 
+    #[structopt(name = "annealing")]
+    Annealing {
+        #[structopt(short = "s")]
+        show_solution: bool,
+
+        #[structopt(flatten)]
+        solver_option: SolverOption,
+
+        #[structopt(short = "f")]
+        force_save: bool,
+
+        #[structopt(short = "b", default_value = "")]
+        bought_boosters: String,
+
+        /// 温度減衰係数
+        #[structopt(long = "decay", default_value = "0.995")]
+        decay: f64,
+
+        input: Option<PathBuf>,
+    },
+
     #[structopt(name = "pack")]
     Pack,
 
@@ -1368,9 +1389,18 @@ fn last_command(sol: &Solution, i: usize) -> Option<Command> {
     return Some(lasts[i].clone());
 }
 
-fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOption) -> Solution {
+fn solve(
+    bd_org: &Board,
+    sx: i64,
+    sy: i64,
+    bought_boosters: &str,
+    opt: &SolverOption,
+    rand_tbl: &Vec<Vec<Pos>>,
+) -> Solution {
     let h = bd_org.len() as i64;
     let w = bd_org[0].len() as i64;
+
+    let mut rand_ix = 0;
 
     let mut state = State::new(
         bd_org,
@@ -1408,21 +1438,28 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
             }
 
             if let Some(turn) = opt.vects_shuffle {
-                if rand::random::<usize>() % turn == 0 {
-                    // if ret.len() % turn == 0 {
-                    // state.robots[i].vect.shuffle(&mut rand::thread_rng());
+                if rand_tbl.len() == 0 {
+                    if rand::random::<usize>() % turn == 0 {
+                        // if ret.len() % turn == 0 {
+                        // state.robots[i].vect.shuffle(&mut rand::thread_rng());
 
-                    loop {
-                        state.robots[i].vect.shuffle(&mut rand::thread_rng());
-                        if if i % 2 == 0 {
-                            state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
-                        } else {
-                            state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
-                        } {
-                            break;
+                        loop {
+                            state.robots[i].vect.shuffle(&mut rand::thread_rng());
+                            if if i % 2 == 0 {
+                                state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
+                            } else {
+                                state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
+                            } {
+                                break;
+                            }
                         }
-                    }
 
+                    }
+                } else {
+                    if ret.len() % turn == 0 {
+                        state.robots[i].vect = rand_tbl[rand_ix].clone();
+                        rand_ix = (rand_ix + 1) % rand_tbl.len();
+                    }
                 }
             }
 
@@ -1940,6 +1977,109 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
 //-----
 
+fn solve_annealing(
+    name: &str,
+    input: &Input,
+    show_solution: bool,
+    force_save: bool,
+    bought_boosters: &str,
+    solver_option: &SolverOption,
+    decay: f64,
+) -> Result<()> {
+    let mut input = input.clone();
+    let (w, h) = normalize(&mut input);
+    let bd = build_map(&input, w, h);
+
+    eprintln!("Start Annealing.");
+
+    let f = |vec: &Vec<Vec<Pos>>| -> f64 {
+        let v = solve(
+            &bd,
+            input.init_pos.0,
+            input.init_pos.1,
+            bought_boosters,
+            solver_option,
+            vec,
+        );
+        v.len() as f64
+    };
+
+    let mut init_vec = vec![VECTS1[0].to_owned(); 12];
+
+    for vect in init_vec.iter_mut() {
+        vect.shuffle(&mut thread_rng());
+    }
+
+    let mut cur_vec = init_vec.clone();
+    let mut cur_score = f(&init_vec);
+    let mut temp = 10.0;
+
+    let mut best_vec = cur_vec.clone();
+    let mut best_score = cur_score;
+
+    eprintln!("Init score: {}", cur_score);
+
+    while temp > 0.1 {
+        let ix = rand::random::<usize>() % cur_vec.len();
+        let tmp = cur_vec.clone();
+        cur_vec[ix].shuffle(&mut thread_rng());
+
+        let new_score = f(&cur_vec);
+
+        if new_score <= cur_score || ((cur_score - new_score) / temp).exp() > rand::random() {
+            // eprintln!("Upd: {}, temp = {}", cur_score, temp);
+            cur_score = new_score;
+            if cur_score < best_score {
+                best_score = cur_score;
+                best_vec = cur_vec.clone();
+                eprintln!("Best: {}, temp = {}", cur_score, temp);
+            }
+        } else {
+            cur_vec = tmp;
+        }
+
+        temp *= decay;
+    }
+
+    let ans = solve(
+        &bd,
+        input.init_pos.0,
+        input.init_pos.1,
+        bought_boosters,
+        solver_option,
+        &best_vec,
+    );
+
+    let score = ans.len() as i64;
+    eprintln!("Score: {}, (options: {:?})", score, solver_option);
+
+    if name != "stdin" {
+        let bs = get_best_score(LIGHTNING_DIR, name).unwrap();
+
+        eprintln!(
+            "Score for {}: score = {}, best_score = {}",
+            name,
+            score,
+            bs.unwrap_or(-1)
+        );
+    }
+
+    if show_solution || name == "stdin" {
+        println!("{}", encode_commands(&ans));
+    } else {
+        save_solution(
+            LIGHTNING_DIR,
+            name,
+            &ans,
+            score,
+            force_save,
+            bought_boosters,
+        )?;
+    }
+
+    Ok(())
+}
+
 fn solve_lightning(
     name: &str,
     input: &Input,
@@ -1950,7 +2090,7 @@ fn solve_lightning(
 ) -> Result<()> {
     let mut input = input.clone();
     let (w, h) = normalize(&mut input);
-    let mut bd = build_map(&input, w, h);
+    let bd = build_map(&input, w, h);
 
     let mut ans = vec![];
 
@@ -1961,6 +2101,7 @@ fn solve_lightning(
             input.init_pos.1,
             bought_boosters,
             solver_option,
+            &vec![],
         );
 
         eprintln!("Try {:4}: cur={:5}, best={:5}", i, cur.len(), ans.len());
@@ -2115,6 +2256,26 @@ fn main_process() -> Result<()> {
                 force_save,
                 &bought_boosters,
                 &solver_option,
+            )?;
+        }
+        Opt::Annealing {
+            show_solution,
+            force_save,
+            input,
+            bought_boosters,
+            solver_option,
+            decay,
+        } => {
+            let (con, file) = read_file(&input)?;
+            let problem = parse_input(&con)?;
+            solve_annealing(
+                &get_problem_name(&file),
+                &problem,
+                show_solution,
+                force_save,
+                &bought_boosters,
+                &solver_option,
+                decay,
             )?;
         }
         Opt::Pack => {
