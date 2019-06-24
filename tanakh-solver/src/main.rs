@@ -1,5 +1,7 @@
 use chrono::prelude::*;
 use num_rational::Rational;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
@@ -39,9 +41,9 @@ struct SolverOption {
     #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
 
-    /// ドリルを使う
+    /// ドリルを使う(ドリルを使う距離の短縮の閾値)
     #[structopt(short = "E", long = "use-drill")]
-    use_drill: bool,
+    use_drill: Option<usize>,
 
     /// 0 以外も C を取りに行く && 産み落とす
     #[structopt(long = "spawn-delegate")]
@@ -58,6 +60,14 @@ struct SolverOption {
     /// Cloneしない
     #[structopt(long = "disable-clone")]
     disable_clone: bool,
+
+    /// VECTSをturnごとにシャッフル
+    #[structopt(long = "vects-shuffle")]
+    vects_shuffle: Option<usize>,
+
+    /// VECTSをturnごとにシャッフル
+    #[structopt(long = "num-try", default_value = "1")]
+    num_try: usize,
 }
 
 #[derive(Debug, StructOpt)]
@@ -183,24 +193,33 @@ impl Cell {
 
 type Pos = (i64, i64);
 
+// const VECTS1: &[&[Pos]] = &[
+//     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+//     &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+//     &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+//     &[(0, 1), (-1, 0), (0, -1), (1, 0)],
+
+//     &[(-1, 0), (0, -1), (1, 0), (0, 1)],
+//     &[(0, 1), (1, 0), (0, -1), (-1, 0)],
+//     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
+//     &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+// ];
+
 const VECTS1: &[&[Pos]] = &[
     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
-    &[(1, 0), (0, -1), (-1, 0), (0, 1)],
-    &[(0, 1), (-1, 0), (0, -1), (1, 0)],
-
-    &[(-1, 0), (0, -1), (1, 0), (0, 1)],
-    &[(0, 1), (1, 0), (0, -1), (-1, 0)],
     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
-    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    &[(-1, 0), (0, 1), (0, -1), (1, 0)],
+    &[(1, 0), (-1, 0), (0, 1), (0, -1)],
+    &[(-1, 0), (1, 0), (0, 1), (0, -1)],
+    &[(1, 0), (0, -1), (0, 1), (-1, 0)],
 ];
 
 const VECTS2: &[&[Pos]] = &[
-    &[(-1, 0), (0, -1), (0, 1), (1, 0)],
-    &[(1, 0), (0, 1), (0, -1), (-1, 0)],
-
     &[(-1, 0), (0, 1), (0, -1), (1, 0)],
     &[(1, 0), (0, -1), (0, 1), (-1, 0)],
+
+    &[(-1, 0), (0, -1), (0, 1), (1, 0)],
+    &[(1, 0), (0, 1), (0, -1), (-1, 0)],
 
     &[(-1, 0), (1, 0), (0, 1), (0, -1)],
     &[(1, 0), (-1, 0), (0, -1), (0, 1)],
@@ -1357,18 +1376,20 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 state.robots[i].drill_time -= 1;
             }
 
-            // if rand::random::<usize>() % 400 == 0 {
-            //     loop {
-            //         state.robots[i].vect.shuffle(&mut rand::thread_rng());
-            //         if if i % 2 == 0 {
-            //             state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
-            //         } else {
-            //             state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
-            //         } {
-            //             break;
-            //         }
-            //     }
-            // }
+            if let Some(turn) = opt.vects_shuffle {
+                if rand::random::<usize>() % turn == 0 {
+                    loop {
+                        state.robots[i].vect.shuffle(&mut rand::thread_rng());
+                        if if i % 2 == 0 {
+                            state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
+                        } else {
+                            state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
+                        } {
+                            break;
+                        }
+                    }
+                }
+            }
 
             // アイテム取得処理
             collect_item(&mut state, i);
@@ -1406,7 +1427,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            if state.items[6] > 0 && state.spawn_bot == None {
+            if !opt.disable_clone && state.items[6] > 0 && state.spawn_bot == None {
                 if opt.spawn_delegate {
                     state.spawn_bot = find_x_closest_bot(&state);
                 } else {
@@ -1541,7 +1562,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     if item == Some(1)
                         || item == Some(5)
                         || (opt.aggressive_fast && item == Some(2))
-                        || (opt.use_drill && item == Some(3))
+                        || (opt.use_drill.is_some() && item == Some(3))
                     {
                         cmds.push(Command::Move(dx, dy));
                         state.move_to(cx, cy, i, true);
@@ -1568,18 +1589,18 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
-            if state.robots[i].num_collected_portal > 0
-                && state.items[5] > 0
-                && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
-                    != Some(4)
-                && !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal()
-            {
-                state.robots[i].num_collected_portal -= 1;
-                state.portals.push((state.robots[i].x, state.robots[i].y));
-                state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_portal();
-                cmds.push(Command::SetPortal);
-                continue;
-            }
+            // if state.robots[i].num_collected_portal > 0
+            //     && state.items[5] > 0
+            //     && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
+            //         != Some(4)
+            //     && !state.bd[state.robots[i].y as usize][state.robots[i].x as usize].has_portal()
+            // {
+            //     state.robots[i].num_collected_portal -= 1;
+            //     state.portals.push((state.robots[i].x, state.robots[i].y));
+            //     state.bd[state.robots[i].y as usize][state.robots[i].x as usize].set_portal();
+            //     cmds.push(Command::SetPortal);
+            //     continue;
+            // }
 
             // 手が増やせるならとりあえず縦に増やす
             if opt.increase_mop {
@@ -1663,7 +1684,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             let ((nx, ny), dist) = n.unwrap();
 
-            if opt.use_drill && dist >= 60 /* TODO: parameterise */ && state.items[3] > 0 {
+            if opt.use_drill.is_some() && dist >= opt.use_drill.unwrap() && state.items[3] > 0 {
                 let mut found = None;
                 'outer: for d in 1..=30_i64 {
                     for j in 0..d {
@@ -1837,13 +1858,22 @@ fn solve_lightning(
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
 
-    let ans = solve(
-        &mut bd,
-        input.init_pos.0,
-        input.init_pos.1,
-        bought_boosters,
-        solver_option,
-    );
+    let mut ans = vec![];
+
+    for i in 0..solver_option.num_try {
+        let cur = solve(
+            &bd,
+            input.init_pos.0,
+            input.init_pos.1,
+            bought_boosters,
+            solver_option,
+        );
+
+        eprintln!("Try {:4}: cur={:5}, best={:5}", i, cur.len(), ans.len());
+        if ans.is_empty() || ans.len() > cur.len() {
+            ans = cur;
+        }
+    }
 
     let score = ans.len() as i64;
     eprintln!("Score: {}, (options: {:?})", score, solver_option);
