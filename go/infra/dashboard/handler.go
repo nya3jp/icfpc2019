@@ -469,15 +469,11 @@ func loadBalance() int {
 		if err != nil {
 			continue
 		}
-		var m map[string]string
+		var m map[string]int
 		if err := json.Unmarshal(b, &m); err != nil {
 			continue
 		}
-		bl, err := strconv.Atoi(m["78"])
-		if err != nil {
-			continue
-		}
-		if bl > balance {
+		if bl, ok := m["78"]; ok && bl > balance {
 			balance = bl
 		}
 	}
