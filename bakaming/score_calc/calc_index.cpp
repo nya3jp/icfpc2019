@@ -180,7 +180,7 @@ void setupValue_prevbestscore(string debugfile){
   ofstream ofs;
   ofs.open(debugfile.c_str(), ios::out);
   for(auto &i: testcases){
-    double value = ceil(size[i.probID]*baseScore[i.probID]/i.step);
+    double value = ceil(size[i.probID]*baseScore[i.probID]*0.75/i.step);
     i.value = value;
     ofs<<i.print_debug()<<endl;
   }
