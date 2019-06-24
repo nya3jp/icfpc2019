@@ -78,11 +78,9 @@ function check(task, solution, purchase) {
   solutionInput.files = [new Blob(solution)];
   solutionInput.onchange();
 
-  if (purchase) {
-    const purchaseInput = document.getElementById('submit_boosters');
-    purchaseInput.files = [new Blob(purchase)];
-    purchaseInput.onchange();
-  }
+  const purchaseInput = document.getElementById('submit_boosters');
+  purchaseInput.files = [new Blob(purchase || '')];
+  purchaseInput.onchange();
 
   const button = document.getElementById('execute_solution');
   button.onclick();
