@@ -230,9 +230,9 @@ void setupValue_disturbScore(string debugfile){
 
 int solve(int cost, int func, string debugfile){
   void (* const valuefunc[])(string) = {
+    setupValue_prevbestscore,
     setupValue_selfratio,
     setupValue_prevbestratio,
-    setupValue_prevbestscore,
     setupValue_disturbScore
   };
   valuefunc[func](debugfile);
@@ -313,7 +313,7 @@ void output(int cost,int now, string outputfile){
 }
 
 int main(int argc, char *argv[]){
-  //Usage ./a.out ./test.txt ./problemsize.txt 1000000 2 ./value_debug.txt ./out.txt
+  //Usage ./a.out ./test.txt ./problemsize.txt 1000000 0 ./value_debug.txt ./out.txt
   input(argv[1], argv[2]);
   int now = solve(stoi(argv[3]),stoi(argv[4]),argv[5]);
   output(stoi(argv[3]),now,argv[6]);
