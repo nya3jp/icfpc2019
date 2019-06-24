@@ -187,11 +187,53 @@ void setupValue_prevbestscore(string debugfile){
   ofs.close();
 }
 
+void setupValue_disturbScore(string debugfile){
+  map<string, int> baseScore;
+  map<string, int> bestScore;
+  string tmpline;
+  ifstream ifs;
+  ifs.open("bestscore.txt");
+  while(getline(ifs,tmpline)){
+    int prob,steps;
+    char str[10];
+    sscanf(tmpline.c_str(), "%d, %d, %s",&prob, &steps, str);
+    string probIDstr = to_string(prob);
+    while(probIDstr.length() < 3) probIDstr = "0" + probIDstr;
+    probIDstr = "prob-"+probIDstr;
+    //cout<<prob<<" "<<steps<<" "<<str<<" "<<probIDstr<<endl;
+    if (bestScore.find(probIDstr) != bestScore.end()){
+      bestScore[probIDstr] = min(bestScore[probIDstr], steps);
+    } else {
+      bestScore[probIDstr] = steps;
+    }
+  }
+  for(auto i: testcases){
+    if(i.cost == 0){
+      if (baseScore.find(i.probID) != baseScore.end()){
+        baseScore[i.probID] = min(i.step, baseScore[i.probID]);
+      } else {
+        baseScore[i.probID] = i.step;
+      }
+    }
+  }
+  ofstream ofs;
+  ofs.open(debugfile.c_str(), ios::out);
+  for(auto &i: testcases){
+    double valuebase = ceil(size[i.probID]*baseScore[i.probID]/i.step)-ceil(size[i.probID]);
+    double valuebest = ceil(size[i.probID]*bestScore[i.probID]/i.step)-ceil(size[i.probID]);
+    //ceil(size[i.probID]*baseScore[i.probID]/i.step);
+    i.value = valuebase+valuebest;
+    ofs<<i.print_debug()<<endl;
+  }
+  ofs.close();
+}
+
 int solve(int cost, int func, string debugfile){
   void (* const valuefunc[])(string) = {
     setupValue_selfratio,
     setupValue_prevbestratio,
-    setupValue_prevbestscore
+    setupValue_prevbestscore,
+    setupValue_disturbScore
   };
   valuefunc[func](debugfile);
   //setupValue_prevbestratio();
