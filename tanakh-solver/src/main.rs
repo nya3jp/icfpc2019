@@ -1,5 +1,7 @@
 use chrono::prelude::*;
 use num_rational::Rational;
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
@@ -39,9 +41,9 @@ struct SolverOption {
     #[structopt(short = "D", long = "aggressive-teleport")]
     aggressive_teleport: bool,
 
-    /// ドリルを使う
+    /// ドリルを使う(ドリルを使う距離の短縮の閾値)
     #[structopt(short = "E", long = "use-drill")]
-    use_drill: bool,
+    use_drill: Option<usize>,
 
     /// 0 以外も C を取りに行く && 産み落とす
     #[structopt(long = "spawn-delegate")]
@@ -62,6 +64,18 @@ struct SolverOption {
     /// Cloneしない
     #[structopt(long = "disable-clone")]
     disable_clone: bool,
+
+    /// VECTSをturnごとにシャッフル
+    #[structopt(long = "vects-shuffle")]
+    vects_shuffle: Option<usize>,
+
+    /// VECTSをturnごとにシャッフル
+    #[structopt(long = "num-try", default_value = "1")]
+    num_try: usize,
+
+    /// Teleport しない
+    #[structopt(long = "disable-teleport")]
+    disable_teleport: bool,
 
     // Randome に portal を drop する
     #[structopt(long = "drop-portal-randomly")]
@@ -191,6 +205,18 @@ impl Cell {
 
 type Pos = (i64, i64);
 
+// const VECTS1: &[&[Pos]] = &[
+//     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+//     &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+//     &[(1, 0), (0, -1), (-1, 0), (0, 1)],
+//     &[(0, 1), (-1, 0), (0, -1), (1, 0)],
+
+//     &[(-1, 0), (0, -1), (1, 0), (0, 1)],
+//     &[(0, 1), (1, 0), (0, -1), (-1, 0)],
+//     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
+//     &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+// ];
+
 const VECTS1: &[&[Pos]] = &[
     &[(-1, 0), (0, 1), (1, 0), (0, -1)],
     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
@@ -207,15 +233,18 @@ const VECTS1: &[&[Pos]] = &[
     &[(-1, 0), (0, -1), (1, 0), (0, 1)],
     &[(0, 1), (1, 0), (0, -1), (-1, 0)],
     &[(1, 0), (0, 1), (-1, 0), (0, -1)],
-    &[(0, -1), (1, 0), (0, 1), (-1, 0)],
+    &[(-1, 0), (0, 1), (0, -1), (1, 0)],
+    &[(1, 0), (-1, 0), (0, 1), (0, -1)],
+    &[(-1, 0), (1, 0), (0, 1), (0, -1)],
+    &[(1, 0), (0, -1), (0, 1), (-1, 0)],
 ];
 
 const VECTS2: &[&[Pos]] = &[
-    &[(-1, 0), (0, -1), (0, 1), (1, 0)],
-    &[(1, 0), (0, 1), (0, -1), (-1, 0)],
-
     &[(-1, 0), (0, 1), (0, -1), (1, 0)],
     &[(1, 0), (0, -1), (0, 1), (-1, 0)],
+
+    &[(-1, 0), (0, -1), (0, 1), (1, 0)],
+    &[(1, 0), (0, 1), (0, -1), (-1, 0)],
 
     &[(-1, 0), (1, 0), (0, 1), (0, -1)],
     &[(1, 0), (-1, 0), (0, -1), (0, 1)],
@@ -1109,7 +1138,7 @@ impl State {
     // }
 
     fn overwrap_score(&self, x: i64, y: i64, i: usize) -> i64 {
-        if true {
+        if false {
             0
         } else {
             let h = self.bd.len() as i64;
@@ -1137,30 +1166,30 @@ impl State {
                     continue;
                 }
 
-                let mut ok = true;
-                for (px, py) in pass_cells(x, y, tx, ty) {
-                    if self.bd[py as usize][px as usize].is_wall() {
-                        ok = false;
-                        break;
-                    }
-                }
+                // let mut ok = true;
+                // for (px, py) in pass_cells(x, y, tx, ty) {
+                //     if self.bd[py as usize][px as usize].is_wall() {
+                //         ok = false;
+                //         break;
+                //     }
+                // }
 
-                if !ok {
-                    penalty += 3;
-                    continue;
-                }
+                // if !ok {
+                //     penalty += 3;
+                //     continue;
+                // }
 
                 if bodies.contains(&(tx, ty)) {
-                    penalty += 1;
+                    penalty += 2;
                     continue;
                 }
 
-                if self.bd[ty as usize][tx as usize].is_painted() {
-                    penalty += 3;
-                    continue;
-                }
+                // if self.bd[ty as usize][tx as usize].is_painted() {
+                //     penalty += 3;
+                //     continue;
+                // }
 
-                // penalty -= 3;
+                // penalty -= 1;
             }
 
             penalty
@@ -1359,11 +1388,9 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
     let mut fin = false;
 
-    let mut steps = 0;
     while !fin {
         let mut cmds = vec![];
         let robot_num = state.robots.len();
-        steps += 1;
         let shortest_mop = state
             .robots
             .iter()
@@ -1380,17 +1407,28 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 state.robots[i].drill_time -= 1;
             }
 
-            // if rand::random::<usize>() % 400 == 0 {
-            //     loop {
-            //         state.robots[i].vect.shuffle(&mut rand::thread_rng());
-            //         if if i % 2 == 0 {
-            //             state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
-            //         } else {
-            //             state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
-            //         } {
-            //             break;
-            //         }
-            //     }
+            if let Some(turn) = opt.vects_shuffle {
+                if rand::random::<usize>() % turn == 0 {
+                    // if ret.len() % turn == 0 {
+                    // state.robots[i].vect.shuffle(&mut rand::thread_rng());
+
+                    loop {
+                        state.robots[i].vect.shuffle(&mut rand::thread_rng());
+                        if if i % 2 == 0 {
+                            state.robots[i].vect[0].1 == 0 && state.robots[i].vect[1].1 != 0
+                        } else {
+                            state.robots[i].vect[0].1 != 0 && state.robots[i].vect[1].1 == 0
+                        } {
+                            break;
+                        }
+                    }
+
+                }
+            }
+
+            // if rand::random::<usize>() % 777 == 0 {
+            //     cmds.push(Command::Turn(rand::random()));
+            //     continue;
             // }
 
             // アイテム取得処理
@@ -1433,7 +1471,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            if state.items[6] > 0 && state.spawn_bot == None {
+            if !opt.disable_clone && state.items[6] > 0 && state.spawn_bot == None {
                 if opt.spawn_delegate {
                     state.spawn_bot = find_x_closest_bot(&state);
                 } else {
@@ -1500,15 +1538,22 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 continue;
             }
 
-            if !state.pending_clone.is_empty() && state.robots[i].target.is_none() && (opt.aggressive_c_collect || i == 0) {
-                let (tx, ty) = nearest(&state, i, |x, y, _| state.pending_clone.contains(&(x, y))).unwrap().2;
+            if !state.pending_clone.is_empty()
+                && state.robots[i].target.is_none()
+                && (opt.aggressive_c_collect || i == 0)
+            {
+                let (tx, ty) = nearest(&state, i, |x, y, _| state.pending_clone.contains(&(x, y)))
+                    .unwrap()
+                    .2;
                 state.robots[i].target = Some((tx, ty));
                 state.pending_clone.remove(&(tx, ty));
             }
 
             if !state.robots[i].target.is_none() {
                 let (tx, ty) = state.robots[i].target.unwrap();
-                let (nx, ny) = nearest(&state, i, |x, y, _| (tx == x && ty == y)).unwrap().0;
+                let (nx, ny) = nearest(&state, i, |x, y, _| (tx == x && ty == y))
+                    .unwrap()
+                    .0;
                 let dx = nx - state.robots[i].x;
                 let dy = ny - state.robots[i].y;
                 if dx.abs() + dy.abs() == 1 {
@@ -1536,34 +1581,34 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             if i == 0 {
                 /*
-                if state.clone_num > 0 {
-                    // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
-                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
-                    let dx = nx - state.robots[i].x;
-                    let dy = ny - state.robots[i].y;
-                    if dx.abs() + dy.abs() == 1 {
-                        cmds.push(Command::Move(dx, dy));
-                        state.move_to(nx, ny, i, false);
-                        if state.robots[i].fast_count > 0 {
-                            collect_item(&mut state, i);
-                            let nnx = nx + dx;
-                            let nny = ny + dy;
-                            if 0 <= nnx
-                                && nnx < w
-                                && 0 <= nny
-                                && nny < h
-                                && !state.bd[nny as usize][nnx as usize].is_wall()
-                            {
-                                state.move_to(nnx, nny, i, false);
-                            }
-                        }
-                    } else {
-                        cmds.push(Command::Teleport(nx, ny));
-                        state.move_to(nx, ny, i, false);
-                    }
-                    continue;
-                }
-*/
+                                if state.clone_num > 0 {
+                                    // eprintln!("***** CLONE_NUM: {} *****", state.clone_num);
+                                    let (nx, ny) = nearest(&state, i, |_, _, c| c.item() == Some(6)).unwrap().0;
+                                    let dx = nx - state.robots[i].x;
+                                    let dy = ny - state.robots[i].y;
+                                    if dx.abs() + dy.abs() == 1 {
+                                        cmds.push(Command::Move(dx, dy));
+                                        state.move_to(nx, ny, i, false);
+                                        if state.robots[i].fast_count > 0 {
+                                            collect_item(&mut state, i);
+                                            let nnx = nx + dx;
+                                            let nny = ny + dy;
+                                            if 0 <= nnx
+                                                && nnx < w
+                                                && 0 <= nny
+                                                && nny < h
+                                                && !state.bd[nny as usize][nnx as usize].is_wall()
+                                            {
+                                                state.move_to(nnx, nny, i, false);
+                                            }
+                                        }
+                                    } else {
+                                        cmds.push(Command::Teleport(nx, ny));
+                                        state.move_to(nx, ny, i, false);
+                                    }
+                                    continue;
+                                }
+                */
                 if opt.aggressive_teleport
                     && state.portal_num > 0
                     && state.robots[i].num_collected_portal == 0
@@ -1609,7 +1654,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                     if item == Some(1)
                         || item == Some(5)
                         || (opt.aggressive_fast && item == Some(2))
-                        || (opt.use_drill && item == Some(3))
+                        || (opt.use_drill.is_some() && item == Some(3))
                     {
                         cmds.push(Command::Move(dx, dy));
                         state.move_to(cx, cy, i, true);
@@ -1636,7 +1681,8 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
                 }
             }
 
-            if state.robots[i].num_collected_portal > 0
+            if !opt.disable_teleport
+                && state.robots[i].num_collected_portal > 0
                 && state.items[5] > 0
                 && state.bd[state.robots[i].y as usize][state.robots[i].x as usize].item()
                     != Some(4)
@@ -1732,7 +1778,7 @@ fn solve(bd_org: &Board, sx: i64, sy: i64, bought_boosters: &str, opt: &SolverOp
 
             let ((nx, ny), dist, _) = n.unwrap();
 
-            if opt.use_drill && dist >= 60 /* TODO: parameterise */ && state.items[3] > 0 {
+            if opt.use_drill.is_some() && dist >= opt.use_drill.unwrap() && state.items[3] > 0 {
                 let mut found = None;
                 'outer: for d in 1..=30_i64 {
                     for j in 0..d {
@@ -1906,13 +1952,22 @@ fn solve_lightning(
     let (w, h) = normalize(&mut input);
     let mut bd = build_map(&input, w, h);
 
-    let ans = solve(
-        &mut bd,
-        input.init_pos.0,
-        input.init_pos.1,
-        bought_boosters,
-        solver_option,
-    );
+    let mut ans = vec![];
+
+    for i in 0..solver_option.num_try {
+        let cur = solve(
+            &bd,
+            input.init_pos.0,
+            input.init_pos.1,
+            bought_boosters,
+            solver_option,
+        );
+
+        eprintln!("Try {:4}: cur={:5}, best={:5}", i, cur.len(), ans.len());
+        if ans.is_empty() || ans.len() > cur.len() {
+            ans = cur;
+        }
+    }
 
     let score = ans.len() as i64;
     eprintln!("Score: {}, (options: {:?})", score, solver_option);
@@ -1931,7 +1986,14 @@ fn solve_lightning(
     if show_solution || name == "stdin" {
         println!("{}", encode_commands(&ans));
     } else {
-        save_solution(LIGHTNING_DIR, name, &ans, score, force_save)?;
+        save_solution(
+            LIGHTNING_DIR,
+            name,
+            &ans,
+            score,
+            force_save,
+            bought_boosters,
+        )?;
     }
 
     Ok(())
@@ -1993,15 +2055,18 @@ fn save_solution(
     ans: &Solution,
     score: i64,
     force_save: bool,
+    bought_boosters: &str,
 ) -> Result<()> {
     // println!("*****: {:?} {:?} {:?} {}", root, name, score);
 
-    let best = get_best_score(root, name)?.unwrap_or(0);
+    let name = name.to_owned() + bought_boosters;
+
+    let best = get_best_score(root, &name)?.unwrap_or(0);
     if best == 0 || best > score || force_save {
         if best == 0 || best > score {
-            eprintln!("* Best score for {}: {} -> {}", name, best, score);
+            eprintln!("* Best score for {}: {} -> {}", &name, best, score);
         }
-        let pb = get_result_dir(root, name)?;
+        let pb = get_result_dir(root, &name)?;
         fs::write(pb.join(format!("{}.sol", score)), &encode_commands(ans))?;
     }
     Ok(())

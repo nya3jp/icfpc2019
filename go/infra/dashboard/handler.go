@@ -109,6 +109,7 @@ type indexValues struct {
 	Purchase      string
 	BestSolutions []*solution
 	Purchases     []string
+	Balance       int
 }
 
 func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
@@ -146,6 +147,7 @@ func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprout
 			Purchase:      purchase,
 			BestSolutions: ss,
 			Purchases:     ps,
+			Balance:       loadBalance(),
 		}
 		return indexTmpl.Execute(w, v)
 	})
@@ -159,6 +161,7 @@ type problemValues struct {
 	Solutions    []*solution
 	BestSolution *solution
 	Purchases    []string
+	Balance      int
 }
 
 func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -187,6 +190,7 @@ func (h *handler) handleProblem(w http.ResponseWriter, r *http.Request, ps httpr
 			Solutions:    ss,
 			BestSolution: bs,
 			Purchases:    ps,
+			Balance:      loadBalance(),
 		}
 		return problemTmpl.Execute(w, v)
 	})
@@ -465,15 +469,11 @@ func loadBalance() int {
 		if err != nil {
 			continue
 		}
-		var m map[string]string
+		var m map[string]int
 		if err := json.Unmarshal(b, &m); err != nil {
 			continue
 		}
-		bl, err := strconv.Atoi(m["78"])
-		if err != nil {
-			continue
-		}
-		if bl > balance {
+		if bl, ok := m["78"]; ok && bl > balance {
 			balance = bl
 		}
 	}

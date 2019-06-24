@@ -22,6 +22,7 @@ SOLVER_RE = re.compile(r'^[A-Za-z0-9+-]+$')
 def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--problem', type=str, required=True, help='Problem name, e.g. prob-001')
+    parser.add_argument('--purchase', type=str, required=False, help='Purchased boosters, e.g. CCCCLL')
     parser.add_argument('--solver', type=str, required=True, help='Solver name')
     parser.add_argument('--solution', type=str, required=True, help='Solution file path')
     return parser.parse_args()
@@ -95,6 +96,7 @@ def main():
     data = {
         'solver': options.solver,
         'problem': options.problem,
+        'purchase': options.purchase,
         'solution': solution,
         'score': score,
     }
@@ -103,7 +105,7 @@ def main():
         'Authorization': 'Basic %s' % base64.b64encode((':' + API_KEY).encode('ascii')).decode('ascii'),
     }
     req = urllib.request.Request(
-        'http://34.85.124.237/submit',
+        'http://sound.nya3.jp/submit',
         data=json.dumps(data).encode('utf-8'),
         method='POST',
         headers=headers)
