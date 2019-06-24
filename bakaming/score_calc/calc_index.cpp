@@ -121,7 +121,7 @@ void setupValue_selfratio(string debugfile){
   for(auto &i: testcases){
     double value = ceil(size[i.probID]);
     value -= ceil(size[i.probID]*baseScore[i.probID]/i.step);
-    i.value = value;
+    i.value = -value;
     ofs<<i.print_debug()<<endl;
   }
   ofs.close();
@@ -152,7 +152,7 @@ void setupValue_prevbestratio(string debugfile){
   for(auto &i: testcases){
     double value = ceil(size[i.probID]);
     value -= ceil(size[i.probID]*baseScore[i.probID]/i.step);
-    i.value = value;
+    i.value = -value;
     ofs<<i.print_debug()<<endl;
   }
   ofs.close();
