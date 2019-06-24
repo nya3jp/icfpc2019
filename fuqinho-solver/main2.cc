@@ -48,6 +48,7 @@ const char MOVE_TYPES[] = "WSADEQBF";
 const int DX[] = {1, 0, -1, 0};
 const int DY[] = {0, 1, 0, -1};
 const char DXY_DIR[] = "DWAS";
+set<tuple<int,int>> gExcludedGoals;
 
 struct Move {
     char move_type;
@@ -353,7 +354,7 @@ struct State {
     pair<Move, State> move(int r_idx, char move_type) const {
         State next_state = *this;
         if (!can(r_idx, move_type)) {
-            return make_pair(Move('Z'), next_state);
+            move_type = 'Z';
         }
         int b_dx = 0;
         int b_dy = 0;
@@ -446,6 +447,7 @@ struct State {
         } else if (move_type == 'C') {
             next_state.C--;
             next_state.robots.push_back(Robot(robots[r_idx].x, robots[r_idx].y));
+        } else if (move_type == 'Z') {
         }
 
         next_state.robots[r_idx].tF = max(0, next_state.robots[r_idx].tF-1);
@@ -474,9 +476,16 @@ struct State {
             cerr << "R" << i << " ";
             if ((int)orders.size() > i) {
                 cerr << " mode:" << orders[i].mode << " ";
+                
             }
-            cerr << " (" << robots[i].x << "," << robots[i].y << ") "
-            << "tB:" << robots[i].tB << " tF:" << robots[i].tF << endl;
+            cerr << " (" << robots[i].x << "," << robots[i].y << ") ";
+            if ((int)orders.size() > i) {
+                if (orders[i].mode == 'G') {
+                    cerr << " -> " << "(" << get<0>(orders[i].target_path.back())
+                    << "," << get<1>(orders[i].target_path.back()) << ") ";
+                }
+            }
+            cerr << "tB:" << robots[i].tB << " tF:" << robots[i].tF << endl;
         }
         vector<string> display = map;
         
@@ -533,7 +542,7 @@ vector<tuple<int, int>> findShortestPath(int x, int y, char tgt, const vector<st
         int cx = get<0>(que.front());
         int cy = get<1>(que.front());
         que.pop();
-        if (map[cy][cx] == tgt) {
+        if (map[cy][cx] == tgt && gExcludedGoals.find(make_tuple(cx, cy)) == gExcludedGoals.end()) {
             foundX = cx;
             foundY = cy;
             break;
@@ -565,11 +574,71 @@ vector<tuple<int, int>> findShortestPath(int x, int y, char tgt, const vector<st
         }
         reverse(path.begin(), path.end());
     }
+    /* 
     cerr << "PATH: ";
     REP(i, path.size()) cerr << "(" << get<0>(path[i]) << "," << get<1>(path[i]) << ")";
     cerr << endl;
+    */
+
     return path;
 }
+
+vector<tuple<int, int>> findShortestPathToNotOwnedEmptyCell(
+        int x, int y, const vector<string>& map,
+        const vector<vector<bool>>& painted,
+        const vector<vector<int>>& owner_map) {
+    const int H = (int)map.size();
+    const int W = (int)map[0].size();
+    vector<vector<int>> dist(H, vector<int>(W, INF));
+    queue<tuple<int, int>> que;
+    dist[y][x] = 0;
+    que.push(make_tuple(x, y));
+    int foundX = -1;
+    int foundY = -1;
+    while (!que.empty()) {
+        int cx = get<0>(que.front());
+        int cy = get<1>(que.front());
+        que.pop();
+        if (map[cy][cx] == '.' && !painted[cy][cx] && owner_map[cy][cx] == -1) {
+            foundX = cx;
+            foundY = cy;
+            break;
+        }
+        REP(k, 4) {
+            int nx = cx + DX[k];
+            int ny = cy + DY[k];
+            if (nx < 0 || nx >= W || ny < 0 || ny >= H || map[ny][nx] == '#' || dist[ny][nx] != INF)
+                continue;
+            dist[ny][nx] = dist[cy][cx] + 1;
+            que.push(make_tuple(nx, ny));
+        }    
+    }
+    vector<tuple<int, int>> path;
+    if (foundX >= 0) {
+        path.push_back(make_tuple(foundX, foundY));
+        int d = dist[foundY][foundX];
+        while (d > 0) {
+            REP(k, 4) {
+                int nx = foundX + DX[k];
+                int ny = foundY + DY[k];
+                if (nx < 0 || nx >= W || ny < 0 || ny >= H || map[ny][nx] == '#' || dist[ny][nx] != d - 1)
+                    continue;
+                foundX = nx;
+                foundY = ny;
+                d = d-1;
+                path.push_back(make_tuple(nx, ny));
+            }
+        }
+        reverse(path.begin(), path.end());
+    }
+    /* 
+    cerr << "PATH: ";
+    REP(i, path.size()) cerr << "(" << get<0>(path[i]) << "," << get<1>(path[i]) << ")";
+    cerr << endl;
+    */
+    return path;
+}
+
 
 pair<int, vector<vector<bool>>> fillByOwner(
         int sx, int sy, int r_idx, int max_fill_dist,
@@ -662,26 +731,15 @@ vector<tuple<int, pair<int,int>, vector<vector<bool>>>> findNotOwnedIslands(
             que.push(make_pair(nx, ny));
         }
     }
-    cerr << "==========================================" << endl;
-    REP(k, res.size()) {
-        cerr << "----------------------- " << k << " ------- " << get<0>(res[k]) << endl;
-        for (int i = H-1; i >= 0; i--) {
-            REP(j, W) {
-                cerr << (get<2>(res[k])[i][j] ? '*' : '-');
-            }
-            cerr << endl;
-        }
-    }
     return res;
 }
 
 vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& order) {
-    constexpr int BEAM_WIDTH = 15;
-    constexpr int BEAM_DEPTH = 15;
+    constexpr int BEAM_WIDTH = 6;
+    constexpr int BEAM_DEPTH = 6;
     const int H = (int)state.map.size();
     const int W = (int)state.map[0].size();
 
-    // Beam search
     
     REP(i, H) {
         REP(j, W) {
@@ -698,6 +756,7 @@ vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& orde
     best_states[0].push_back(
             make_tuple(state.score(), state, vector<Move>()));
 
+    // Beam search
     for (int k = 0; k < BEAM_DEPTH; k++) {
         for (int i = 0; i < (int)best_states[k].size(); i++) {
             State cur_state = get<1>(best_states[k][i]);
@@ -736,6 +795,30 @@ vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& orde
     return get<2>(best_states[BEAM_DEPTH][0]);
 }
 
+pair<char, vector<tuple<int, int>>> findAlternativePath(
+        int sx, int sy, const vector<string>& map) {
+    auto path = findShortestPath(sx, sy, 'C', map);
+    if (!path.empty()) {
+        return make_pair('C', path);
+    }
+    path = findShortestPath(sx, sy, 'B', map);
+    if (!path.empty()) {
+        return make_pair('B', path);
+    }
+    path = findShortestPath(sx, sy, 'F', map);
+    if (!path.empty()) {
+        return make_pair('F', path);
+    }
+    path = findShortestPath(sx, sy, 'L', map);
+    if (!path.empty()) {
+        return make_pair('L', path);
+    }
+    path = findShortestPath(sx, sy, 'R', map);
+    if (!path.empty()) {
+        return make_pair('R', path);
+    }
+    return make_pair(' ', path);
+}
 
 vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrder>& prev_robot_orders) {
     int H = (int)state.map.size();
@@ -762,13 +845,6 @@ vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrde
             }
         }
     }
-    /*
-    REP(k, R) {
-        robot_orders[k].print();
-    }
-    */
-
-    // Temporary: Other free robots paint the area.
 
 #if 0
     // Debug
@@ -790,7 +866,7 @@ vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrde
             continue;
         int sx = state.robots[k].x;
         int sy = state.robots[k].y;
-        auto islands = findNotOwnedIslands(sx, sy, k, 9, 15, owner_map, state);
+        auto islands = findNotOwnedIslands(sx, sy, k, 4, 15, owner_map, state);
         sort(islands.begin(), islands.end());
         cerr << "---------------------" << endl;
         REP(i, islands.size()) {
@@ -802,134 +878,51 @@ vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrde
         if (islands.size() > 0) {
             robot_orders[k].mode = 'P';
             robot_orders[k].target_area = get<2>(islands[0]);
-            robot_orders[k].turn_to_expire = 4;
-        } else {
-            // Get boosters.
-
-
-            /* 
-            robot_orders[k].mode = 'C';
-            robot_orders[k].target_path = findShortestPath(state.robots[k].x, state.robots[k].y, 'X', state.map);
-            */
-            // debug
-            robot_orders[k].mode = 'P';
-            vector<vector<bool>> target_area(H, vector<bool>(W, false));
-            REP(i, H) REP(j, W) if (state.map[i][j] != '#' && !state.painted[i][j])
-                target_area[i][j] = true;
-            robot_orders[k].target_area = target_area;
+            robot_orders[k].turn_to_expire = 1;
         }
     }
-#endif
-
-#if 0
-    // 3-1. Compute domination.
-    set<tuple<int, int>> start;
-    vector<vector<int>> domination(H, vector<int>(W, -1));
-    queue<tuple<int, int, int>> que;
-    REP(k, state.robots.size()) {
-        int x = state.robots[k].x;
-        int y = state.robots[k].y;
-        if (start.find(make_tuple(x, y)) != start.end()) {
-            bool found = false;
-            for (int dx = -1; dx <= 1 && !found; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    int nx = x + dx;
-                    int ny = y + dy;
-                    if (nx < 0 || nx >= W || ny < 0 || ny >= H)
-                        continue;
-                    if (start.find(make_tuple(nx, ny)) != start.end())
-                        continue;
-                    if (state.map[ny][nx] == '#')
-                        continue;
-                    x = nx;
-                    y = ny;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                cerr << "###### Critical error!" << endl;
-            }
-        }
-        start.insert(make_tuple(x, y));
-        domination[y][x] = k;
-        que.push(make_tuple(k, x, y));
-    }
-    while (!que.empty()) {
-        int c = get<0>(que.front());
-        int x = get<1>(que.front());
-        int y = get<2>(que.front());
-        que.pop();
-        REP(k, 4) {
-            int nx = x + DX[k];
-            int ny = y + DY[k];
-            if (nx < 0 || nx >= W || ny < 0 || ny >= H)
-                continue;
-            if (domination[ny][nx] != -1)
-                continue;
-            if (state.map[ny][nx] == '#')
-                continue;
-            domination[ny][nx] = c;
-            que.push(make_tuple(c, nx, ny));
-        }
-    }
-#endif
-    
-#if 0
-    cerr << "###### Print domination map ######" << endl;
-    for (int i = H-1; i >= 0; i--) {
-        for (int j = 0; j < W; j++) {
-            if (domination[i][j] < 0)
-                cerr << ' ';
-            else
-                cerr << domination[i][j];
-        }
-        cerr << endl;
-    }
-#endif
-
-#if 0
-    // 3-2. Find nearby islands.
-    // Experiment: Set all area 
     REP(k, R) {
-        // Temporary. Discard this when necessary to reduce copy cost.
-        robot_orders[k].target_area = vector<vector<bool>>(H, vector<bool>(W, false));
-    }
-    REP(i, H) {
-        REP(j, W) {
-            if (state.map[i][j] != '#' && !state.painted[i][j]) {
-                assert(domination[i][j] >= 0);
-                int robot_idx = domination[i][j];
-                robot_orders[robot_idx].target_area[i][j] = true;
-            }
+        if (robot_orders[k].mode != 'W')
+            continue;
+        int sx = state.robots[k].x;
+        int sy = state.robots[k].y;
+        auto path = findShortestPathToNotOwnedEmptyCell(sx, sy, state.map, state.painted, owner_map);
+        auto half_path = vector<tuple<int,int>>(path.begin(), path.begin() + path.size() / 2);
+        if (!half_path.empty()) {
+            robot_orders[k].mode = 'G';
+            //robot_orders[k].target_path = half_path;
+            robot_orders[k].target_path = path;
         }
     }
-
-    // Temporary
     REP(k, R) {
-        if (robot_orders[k].mode == 'W')
-            robot_orders[k].mode = 'P';
-    }
-#endif
-    
-    // ####### Update target area for each robot
-    // Restting to mode P temporarily.
+        if (robot_orders[k].mode != 'W')
+            continue;
+        int sx = state.robots[k].x;
+        int sy = state.robots[k].y;
 
-#if 0
-    REP(k, R) {
-        cerr << "------ Robot " << k << " -------" << endl;
-        for (int i = H-1; i >= 0; i--) {
-            REP(j, W) {
-                if (state.map[i][j] == '#')
-                    cerr << '#';
-                else {
-                    cerr << (robot_orders[k].target_area[i][j] ? '.' : ' ');
-                }
-            }
-            cerr << endl;
+        // Get boosters.
+        auto alt_path = findAlternativePath(sx, sy, state.map);
+        if (!alt_path.second.empty()) {
+            robot_orders[k].mode = 'G';
+            robot_orders[k].target_path = alt_path.second;
+            gExcludedGoals.insert(robot_orders[k].target_path.back());
         }
     }
+    REP(k, R) {
+        if (robot_orders[k].mode != 'W')
+            continue;
+        int sx = state.robots[k].x;
+        int sy = state.robots[k].y;
+        
+        // debug
+        robot_orders[k].mode = 'P';
+        vector<vector<bool>> target_area(H, vector<bool>(W, false));
+        REP(i, H) REP(j, W) if (state.map[i][j] != '#' && !state.painted[i][j])
+        target_area[i][j] = true;
+        robot_orders[k].target_area = target_area;
+    }
 #endif
+
     return robot_orders;
 }
 
@@ -940,9 +933,9 @@ vector<RobotOrder> updateAfterMoves(const State& state,
     int W = (int)state.map[0].size();
     int R = (int)state.robots.size();
     REP(k, robot_orders.size()) {
-        if (robot_orders[k].mode == 'C' && moves[k].move_type == 'C')
+        if (robot_orders[k].mode == 'C' && moves[k].move_type == 'C') {
             robot_orders[k].mode = 'W';
-        if (robot_orders[k].mode == 'P') {
+        } else if (robot_orders[k].mode == 'P') {
             int remaining = 0;
             REP(i, H) REP(j, W) {
                 if (robot_orders[k].target_area[i][j]) {
@@ -956,6 +949,13 @@ vector<RobotOrder> updateAfterMoves(const State& state,
             if (remaining == 0 || robot_orders[k].turn_to_expire <= 0) {
                 robot_orders[k].mode = 'W';
                 robot_orders[k].target_area.clear();
+            }
+        } else if (robot_orders[k].mode == 'G') {
+            int dx = abs(state.robots[k].x == get<0>(robot_orders[k].target_path.back()));
+            int dy = abs(state.robots[k].y == get<1>(robot_orders[k].target_path.back()));
+            if (dx + dy <= 1) {
+                robot_orders[k].mode = 'W';
+                robot_orders[k].target_path.clear();
             }
         }
     }
@@ -1001,6 +1001,40 @@ vector<Move> computeBestMoves(const State& state, const vector<RobotOrder>& robo
                 robot_moves[k] = Move(direction);
             }
         }
+        if (robot_orders[k].mode == 'G') {
+            int path_idx = 0;
+            REP(i, robot_orders[k].target_path.size()) {
+                if (state.robots[k].x == get<0>(robot_orders[k].target_path[i]) &&
+                        state.robots[k].y == get<1>(robot_orders[k].target_path[i])) {
+                    path_idx = i;
+                    break;
+                }
+            }
+            if (path_idx != robot_orders[k].target_path.size()-1) {
+                char direction = '?';
+                REP(i, 4) {
+                    int nx = state.robots[k].x + DX[i];
+                    int ny = state.robots[k].y + DY[i];
+                    if (nx == get<0>(robot_orders[k].target_path[path_idx+1]) && 
+                            ny == get<1>(robot_orders[k].target_path[path_idx+1])) {
+                        direction = DXY_DIR[i];
+                        break;
+                    }
+                }
+                if (direction == 'W' || direction == 'S' || direction == 'A' || direction == 'D') {
+                    robot_moves[k] = Move(direction);
+                } else {
+                    cerr << "EEEEEEEEE " << direction;
+                    cerr << "(" << state.robots[k].x << ", " << state.robots[k].y << ")" << endl;
+                    REP(i, robot_orders[k].target_path.size()) {
+                        cerr << "(" << get<0>(robot_orders[k].target_path[i]) << "," << get<1>(robot_orders[k].target_path[i]) << ") -> ";
+                    }
+                    exit(1);
+                }
+            } else {
+                robot_moves[k] = Move('Z');
+            }
+        }
         if (robot_orders[k].mode == 'P') {
             vector<Move> moves = computeBestMovesForP(state, k, robot_orders[k]);
             robot_moves[k] = moves[0];
@@ -1018,6 +1052,7 @@ vector<vector<Move>> solve(const State& initial_state) {
     vector<RobotOrder> robot_orders;
     while (!state.finished()) {
         robot_orders = computeRobotOrders(state, robot_orders);
+        state.print(robot_orders);
         vector<Move> robot_moves = computeBestMoves(state, robot_orders);
         while (history.size() < robot_moves.size())
             history.push_back(vector<Move>());
@@ -1028,7 +1063,6 @@ vector<vector<Move>> solve(const State& initial_state) {
             history[k].push_back(move_result.first);
         }
         robot_orders = updateAfterMoves(state, robot_orders, robot_moves);
-        state.print(robot_orders);
     }
     return history;
 }
