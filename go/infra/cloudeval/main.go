@@ -13,6 +13,7 @@ import (
 
 	"cloud.google.com/go/storage"
 
+	"github.com/nya3jp/icfpc2019/go/infra/concurrent"
 	"github.com/nya3jp/icfpc2019/go/infra/tasklet"
 )
 
@@ -108,25 +109,30 @@ func doMain() error {
 	logf("Running %d jobs...", len(args.problems))
 
 	ch := make(chan time.Duration, len(args.problems))
-	for _, problem := range args.problems {
-		problem := problem
-		go func() {
-			runtime, err := evaluate(ctx, sc, tc, problem, args.purchase, args.solver, args.timeout)
-			if err != nil {
-				logf("ERROR: %s: %v", problem, err)
-			}
-			ch <- runtime
-		}()
-		time.Sleep(100 * time.Millisecond)
-	}
+	lim := concurrent.NewLimit(300)
+	go func() {
+		for _, problem := range args.problems {
+			problem := problem
+			go func() {
+				defer lim.Use(1)()
+				runtime, err := evaluate(ctx, sc, tc, problem, args.purchase, args.solver, args.timeout)
+				if err != nil {
+					logf("ERROR: %s: %v", problem, err)
+				}
+				ch <- runtime
+			}()
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 
 	var total time.Duration
-	for range args.problems {
+	for i := range args.problems {
+		fmt.Fprintf(os.Stderr, "%d/%d done (￥%.1f)\r", i, len(args.problems), price(total))
 		t := <-ch
 		total += t
 	}
 
-	logf("Finished! Total %v (%.1f JPY)", total.Round(time.Second), total.Seconds()*0.000029*107.32)
+	logf("Finished! Total %v (￥%.1f)", total.Round(time.Second), price(total))
 	return nil
 }
 
@@ -163,11 +169,11 @@ if grep -q ERROR $OUT_DIR/validation.txt; then exit 40; fi
 		},
 		Out: fmt.Sprintf("gs://sound-type-system/evals/%s/%s/", solver, problemPlus),
 	}
-	if err := tc.Run(ctx, task); err != nil {
-		return 0, err
-	}
-
+	err := tc.Run(ctx, task)
 	runtime = time.Since(start)
+	if err != nil {
+		return runtime, err
+	}
 
 	obj := sc.Bucket("sound-type-system").Object(fmt.Sprintf("evals/%s/%s/validation.txt", solver, problemPlus))
 	r, err := obj.NewReader(ctx)
@@ -191,4 +197,8 @@ func log(args ...interface{}) {
 
 func logf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "%s\n", fmt.Sprintf(format, args...))
+}
+
+func price(t time.Duration) float64 {
+	return t.Seconds() * 0.000029 * 107.32
 }
