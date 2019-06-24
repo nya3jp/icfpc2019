@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,6 +38,7 @@ func newHandler(db *sql.DB, cl *storage.Client) http.Handler {
 	h := &handler{db: db, cl: cl}
 	r := httprouter.New()
 	r.Handle("GET", "/dashboard", h.handleIndex)
+	r.Handle("GET", "/dashboard/arena", h.handleArena)
 	r.Handle("GET", "/dashboard/problem/:problem", h.handleProblem)
 	r.Handle("GET", "/dashboard/zip", h.handleZip)
 	r.Handle("GET", "/dashboard/csv", h.handleCSV)
@@ -150,6 +152,98 @@ func (h *handler) handleIndex(w http.ResponseWriter, r *http.Request, _ httprout
 			Balance:       loadBalance(),
 		}
 		return indexTmpl.Execute(w, v)
+	})
+}
+
+var arenaTmpl = template.Must(parseTemplate("base.html", "arena.html"))
+
+type arenaValues struct {
+	Purchase  string
+	Problems  []string
+	Solvers   []*arenaSolver
+	Purchases []string
+	Balance   int
+}
+
+type arenaSolver struct {
+	Name     string
+	Problems []bool
+}
+
+func (h *handler) handleArena(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	handle(w, r, func(ctx context.Context) error {
+		purchase := r.URL.Query().Get("purchase")
+
+		ss, err := h.queryAllSolutions(ctx, purchase)
+		if err != nil {
+			return err
+		}
+
+		problems := make([]string, 300)
+		problemMap := make(map[string]int)
+		for i := range problems {
+			name := fmt.Sprintf("prob-%03d", i+1)
+			problems[i] = name
+			problemMap[name] = i
+		}
+
+		solverMap := make(map[string]*arenaSolver)
+		for _, s := range ss {
+			solverMap[s.Solver] = &arenaSolver{
+				Name:     s.Solver,
+				Problems: make([]bool, len(problems)),
+			}
+		}
+		var solvers []*arenaSolver
+		for _, s := range solverMap {
+			solvers = append(solvers, s)
+		}
+		sort.Slice(solvers, func(i, j int) bool {
+			return solvers[i].Name < solvers[j].Name
+		})
+
+		bestScores := make(map[string]int32)
+		for _, s := range ss {
+			if b, ok := bestScores[s.Problem]; !ok {
+				bestScores[s.Problem] = s.Score
+			} else if s.Score < b {
+				bestScores[s.Problem] = s.Score
+			}
+		}
+
+		for _, s := range ss {
+			if s.Score == bestScores[s.Problem] {
+				solverMap[s.Solver].Problems[problemMap[s.Problem]] = true
+			}
+		}
+
+		var validSolvers []*arenaSolver
+		for _, s := range solvers {
+			ok := false
+			for _, p := range s.Problems {
+				if p {
+					ok = true
+					break
+				}
+			}
+			if ok {
+				validSolvers = append(validSolvers, s)
+			}
+		}
+
+		ps, err := h.queryPurchases(ctx)
+		if err != nil {
+			return err
+		}
+
+		v := &arenaValues{
+			Purchase:  purchase,
+			Problems:  problems,
+			Solvers:   validSolvers,
+			Purchases: ps,
+			Balance:   loadBalance(),
+		}
+		return arenaTmpl.Execute(w, v)
 	})
 }
 
@@ -450,6 +544,26 @@ ORDER BY purchase ASC
 		purchases = append(purchases, p)
 	}
 	return purchases, nil
+}
+
+func (h *handler) queryAllSolutions(ctx context.Context, purchase string) ([]*solution, error) {
+	rows, err := h.db.QueryContext(ctx, `
+SELECT
+  id,
+  solver,
+  problem,
+  purchase,
+  evaluator,
+  score,
+  submitted
+FROM solutions
+WHERE valid AND purchase = ?
+`, purchase)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSolutions(rows)
 }
 
 func loadBalance() int {
