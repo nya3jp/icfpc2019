@@ -8,6 +8,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,19 +20,22 @@ import (
 )
 
 type args struct {
-	solver   string
-	problems []string
-	purchase string
-	timeout  time.Duration
-	execKey  string
+	solver    string
+	problems  []string
+	purchases []string
+	limit     int
+	timeout   time.Duration
+	execKey   string
 }
 
 func parseArgs() (*args, error) {
 	var args args
+	var purchase string
 	var timeout int
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
 	fs.StringVar(&args.solver, "solver", "", "")
-	fs.StringVar(&args.purchase, "purchase", "default", "")
+	fs.StringVar(&purchase, "purchase", "default", "")
+	fs.IntVar(&args.limit, "limit", 100, "")
 	fs.IntVar(&timeout, "timeout", 0, "")
 	fs.StringVar(&args.execKey, "execkey", "", "")
 
@@ -44,14 +49,17 @@ func parseArgs() (*args, error) {
 	if args.solver == "" {
 		return nil, errors.New("-solver must be specified")
 	}
-	if args.purchase == "default" {
+	if purchase == "default" {
 		return nil, errors.New("-purchase must be specified")
 	}
 	if timeout == 0 {
 		return nil, errors.New("-timeout must be specified")
 	}
-	if err := validatePurchase(args.purchase); err != nil {
-		return nil, err
+	args.purchases = strings.Split(purchase, ",")
+	for _, p := range args.purchases {
+		if err := validatePurchase(p); err != nil {
+			return nil, err
+		}
 	}
 	if args.execKey == "" {
 		return nil, errors.New("-execkey must be specified")
@@ -106,33 +114,35 @@ func doMain() error {
 
 	tc := tasklet.NewClient(http.DefaultClient, args.execKey)
 
-	logf("Running %d jobs...", len(args.problems))
+	logf("Running %d jobs...", len(args.problems)*len(args.purchases))
 
-	ch := make(chan time.Duration, len(args.problems))
-	lim := concurrent.NewLimit(300)
+	ch := make(chan time.Duration, len(args.problems)*len(args.purchases))
+	lim := concurrent.NewLimit(args.limit)
 	go func() {
 		for _, problem := range args.problems {
-			problem := problem
-			go func() {
-				defer lim.Use(1)()
-				runtime, err := evaluate(ctx, sc, tc, problem, args.purchase, args.solver, args.timeout)
-				if err != nil {
-					logf("ERROR: %s: %v", problem, err)
-				}
-				ch <- runtime
-			}()
-			time.Sleep(200 * time.Millisecond)
+			for _, purchase := range args.purchases {
+				purchase, problem := purchase, problem
+				go func() {
+					defer lim.Use(1)()
+					runtime, err := evaluate(ctx, sc, tc, problem, purchase, args.solver, args.timeout)
+					if err != nil {
+						logf("ERROR: %s %s %s: %v", args.solver, purchase, problem, err)
+					}
+					ch <- runtime
+				}()
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 	}()
 
 	var total time.Duration
-	for i := range args.problems {
-		fmt.Fprintf(os.Stderr, "%d/%d done (￥%.1f)\r", i, len(args.problems), price(total))
+	for i := 0; i < len(args.problems)*len(args.purchases); i++ {
+		fmt.Fprintf(os.Stderr, "%d/%d done (￥%.1f)\r", i, len(args.problems)*len(args.purchases), price(total))
 		t := <-ch
 		total += t
 	}
 
-	logf("Finished! Total %v (￥%.1f)", total.Round(time.Second), price(total))
+	logf("Finished in %v (￥%.1f)", total.Round(time.Second), price(total))
 	return nil
 }
 
@@ -187,9 +197,25 @@ if grep -q ERROR $OUT_DIR/validation.txt; then exit 40; fi
 		return runtime, err
 	}
 
-	logf("PASS: %s (%v): %s", problem, runtime.Round(time.Second), strings.TrimSpace(string(b)))
+	// hack
+	out := strings.TrimSpace(string(b))
+	if m := outRe.FindStringSubmatch(out); m != nil {
+		score, err := strconv.Atoi(m[1])
+		if err == nil {
+			bestScore, err := strconv.Atoi(m[2])
+			if err == nil {
+				if bestScore == 0 || score < bestScore {
+					out += " UPDATED!"
+				}
+			}
+		}
+	}
+
+	logf("PASS: %s %s %s (%v): %s", solver, purchase, problem, runtime.Round(time.Second), out)
 	return runtime, nil
 }
+
+var outRe = regexp.MustCompile(`"score":(\d+),"lastBestScore":(\d+)`)
 
 func log(args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "%s\n", fmt.Sprint(args...))

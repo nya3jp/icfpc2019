@@ -160,6 +160,7 @@ struct State {
     std::vector<std::string> map;
     std::vector<std::vector<bool>> painted;
     vector<Robot> robots;
+    int turns;
 
     int B, F, L, R, C;
     int rB, rF, rL, rR, rC;
@@ -170,6 +171,7 @@ struct State {
     vector<vector<int>> cell_scores;
 
     State(const Mine& mine, const string boosters) {
+        turns = 0;
         int W = mine.max_x, H = mine.max_y;
         robots.push_back(Robot(mine.cur_x, mine.cur_y));
         B = F = L = R = C = 0;
@@ -770,21 +772,20 @@ vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& orde
     // Beam search
     for (int k = 0; k < BEAM_DEPTH; k++) {
         for (int i = 0; i < (int)best_states[k].size(); i++) {
-            State cur_state = get<1>(best_states[k][i]);
-            vector<Move> cur_moves = get<2>(best_states[k][i]);
+            const State& cur_state = get<1>(best_states[k][i]);
+            const vector<Move>& cur_moves = get<2>(best_states[k][i]);
             for (auto move_type : MOVE_TYPES) {
                 if (!cur_state.can(r_idx, move_type))
                     continue;
                 if (cur_state.B > 0 && move_type != 'B') // Use B immediately.
                     continue;
-                auto moved = cur_state.move(r_idx, move_type);
-                State next_state = moved.second;
-                Move move = moved.first;
+                const auto& moved = cur_state.move(r_idx, move_type);
+                const State& next_state = moved.second;
+                const Move& move = moved.first;
                 vector<Move> next_moves = cur_moves;
                 next_moves.push_back(move);
                 double next_score = next_state.score();
-                best_states[k+1].push_back(
-                        make_tuple(next_score, next_state, next_moves));
+                best_states[k+1].emplace_back(next_score, next_state, next_moves);
             }
 
             std::sort(best_states[k+1].rbegin(), best_states[k+1].rend());
@@ -953,7 +954,7 @@ vector<RobotOrder> updateAfterMoves(const State& state,
                 }
             }
             robot_orders[k].turn_to_expire--;
-            if (remaining == 0 || robot_orders[k].turn_to_expire <= 0) {
+            if (remaining == 0 || robot_orders[k].turn_to_expire <= 0 || state.turns % 5 == 0) {
                 robot_orders[k].mode = 'W';
                 robot_orders[k].target_area.clear();
             } else {
@@ -962,7 +963,15 @@ vector<RobotOrder> updateAfterMoves(const State& state,
                 } else {
 
                 }
-                robot_orders[k].reserved_moves.erase(robot_orders[k].reserved_moves.begin());
+                if (robot_orders[k].reserved_moves.empty()) {
+                    robot_orders[k].mode = 'W';
+                } else {
+                    robot_orders[k].reserved_moves.erase(robot_orders[k].reserved_moves.begin());
+                    if (robot_orders[k].reserved_moves.empty()) {
+                        robot_orders[k].mode = 'W';
+                    }
+  
+                }
             }
         } else if (robot_orders[k].mode == 'G') {
             int dx = abs(state.robots[k].x == get<0>(robot_orders[k].target_path.back()));
@@ -1064,7 +1073,7 @@ vector<vector<Move>> solve(const State& initial_state) {
     vector<RobotOrder> robot_orders;
     while (!state.finished()) {
         robot_orders = computeRobotOrders(state, robot_orders);
-        state.print(robot_orders);
+        //state.print(robot_orders);
         vector<vector<Move>> robot_moves = computeBestMoves(state, robot_orders);
         while (history.size() < robot_moves.size())
             history.push_back(vector<Move>());
@@ -1080,6 +1089,7 @@ vector<vector<Move>> solve(const State& initial_state) {
         vector<Move> last_moves(robot_moves.size());
         REP(k, robot_moves.size()) last_moves[k] = robot_moves[k][0];
         robot_orders = updateAfterMoves(state, robot_orders, last_moves);
+        state.turns++;
     }
     return history;
 }
@@ -1108,6 +1118,7 @@ int main(int argc, char** argv) {
     google::InitGoogleLogging(argv[0]);
     google::InstallFailureSignalHandler();
 
+
     std::string initial_boosters;
     if (argc >= 2)
         initial_boosters = std::string(argv[1]);
@@ -1123,12 +1134,33 @@ int main(int argc, char** argv) {
     mine.setPos(std::get<0>(initial_pos), std::get<1>(initial_pos));
     mine.boosters = parts[3];
 
+
+    int best_turns = INF;
+    vector<vector<Move>> best_history;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ll start = ts.tv_sec;
+    while (true) {
     State state(mine, initial_boosters);
     state.print();
     vector<vector<Move>> history = solve(state);
-    std::string answer = output(history);
+    int turns = history.size();
+    if (turns < best_turns) {
+        best_turns = turns;
+        best_history = history;
+    }
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ll now = ts.tv_sec;
+         gExcludedGoals.clear();
+        if (now - start >= 60)
+            break;
+    }
+
+    std::string answer = output(best_history);
     std::cout << answer << std::endl;
-    std::cerr << "T: " << history[0].size();
+    std::cerr << "T: " << best_history[0].size();
+    
 
     return 0;
 }
