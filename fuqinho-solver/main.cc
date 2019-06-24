@@ -390,22 +390,23 @@ vector<Move> computeBestMoves(State state) {
 
     for (int k = 0; k < BEAM_DEPTH; k++) {
         for (int i = 0; i < (int)best_states[k].size(); i++) {
-            State cur_state = get<1>(best_states[k][i]);
-            vector<Move> cur_moves = get<2>(best_states[k][i]);
+            const State &cur_state = get<1>(best_states[k][i]);
+            const vector<Move>& cur_moves = get<2>(best_states[k][i]);
             for (auto move_type : MOVE_TYPES) {
                 if (!cur_state.can(move_type))
                     continue;
                 if (cur_state.B > 0 && move_type != 'B') // Use B immediately.
                     continue;
-                auto moved = cur_state.move(move_type);
-                State next_state = moved.second;
-                Move move = moved.first;
+                const auto& moved = cur_state.move(move_type);
+                const State& next_state = moved.second;
+                const Move& move = moved.first;
                 vector<Move> next_moves = cur_moves;
                 next_moves.push_back(move);
                 double next_score = next_state.score();
-                best_states[k+1].push_back(
-                        make_tuple(next_score, next_state, next_moves));
+                best_states[k+1].emplace_back(next_score, next_state, next_moves);
             }
+            
+            
             /* 
             std::random_device rd;
             std::mt19937 g(rd());
