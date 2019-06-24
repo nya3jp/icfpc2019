@@ -1166,13 +1166,13 @@ impl State {
                     continue;
                 }
 
-                let mut ok = true;
-                for (px, py) in pass_cells(x, y, tx, ty) {
-                    if self.bd[py as usize][px as usize].is_wall() {
-                        ok = false;
-                        break;
-                    }
-                }
+                // let mut ok = true;
+                // for (px, py) in pass_cells(x, y, tx, ty) {
+                //     if self.bd[py as usize][px as usize].is_wall() {
+                //         ok = false;
+                //         break;
+                //     }
+                // }
 
                 // if !ok {
                 //     penalty += 3;
@@ -1180,7 +1180,7 @@ impl State {
                 // }
 
                 if bodies.contains(&(tx, ty)) {
-                    penalty += 1;
+                    penalty += 2;
                     continue;
                 }
 
