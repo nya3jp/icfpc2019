@@ -28,6 +28,11 @@
 
 using namespace std;
 
+std::random_device rd;
+std::mt19937 rng(rd());
+std::uniform_real_distribution<> dis01;
+
+
 #define REP(i,n) for(int i=0; i<(int)(n); i++)
 #define FOR(i,b,e) for(int i=(b); i<(int)(e); i++)
 #define EACH(i,c) for(__typeof((c).begin()) i=(c).begin(); i!=(c).end(); i++)
@@ -49,6 +54,7 @@ const int DX[] = {1, 0, -1, 0};
 const int DY[] = {0, 1, 0, -1};
 const char DXY_DIR[] = "DWAS";
 set<tuple<int,int>> gExcludedGoals;
+
 
 struct Move {
     char move_type;
@@ -131,9 +137,11 @@ struct RobotOrder {
     // P: Paint target area (B, F, L, T are allowed.)
     // C: Use C booster by following |target_path| to X;
     // R: Use R at the current pos;
+    // F: Follow given moves;
     char mode;
     vector<vector<bool>> target_area;
     vector<tuple<int, int>> target_path;
+    vector<Move> reserved_moves;
     int turn_to_expire;
     RobotOrder() : mode('W') {}
     void print() {
@@ -336,7 +344,7 @@ struct State {
         } else if (move_type == 'B') {
             return B > 0;
         } else if (move_type == 'F') {
-            return F > 0;
+            return F > 0 && dis01(rng) < 0.3;
         } else if (move_type == 'C') {
             cerr << "------- check if C is doable ---" << endl;
             cerr << "robot = (" << robots[r_idx].x << "," << robots[r_idx].y << ")" << endl;
@@ -735,12 +743,10 @@ vector<tuple<int, pair<int,int>, vector<vector<bool>>>> findNotOwnedIslands(
 }
 
 vector<Move> computeBestMovesForP(State state, int r_idx, const RobotOrder& order) {
-    constexpr int BEAM_WIDTH = 6;
-    constexpr int BEAM_DEPTH = 6;
+    constexpr int BEAM_WIDTH = 5;
+    constexpr int BEAM_DEPTH = 10;
     const int H = (int)state.map.size();
     const int W = (int)state.map[0].size();
-
-    
     REP(i, H) {
         REP(j, W) {
             if (!state.painted[i][j]) {
@@ -868,10 +874,6 @@ vector<RobotOrder> computeRobotOrders(const State& state, const vector<RobotOrde
         int sy = state.robots[k].y;
         auto islands = findNotOwnedIslands(sx, sy, k, 4, 15, owner_map, state);
         sort(islands.begin(), islands.end());
-        cerr << "---------------------" << endl;
-        REP(i, islands.size()) {
-            cerr << "size: " << get<0>(islands[i]);
-        }
         for (int i = 1; i < (int)islands.size(); i++) { // choose the smallest islands and release others.
             fillByOwner(get<1>(islands[i]).first, get<1>(islands[i]).second, -1, 15, owner_map, state);
         }
@@ -1086,6 +1088,7 @@ string output(const vector<vector<Move>>& history) {
 }
 
 int main(int argc, char** argv) {
+    dis01 = std::uniform_real_distribution<>(0.0, 1.0);
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
     google::InstallFailureSignalHandler();
